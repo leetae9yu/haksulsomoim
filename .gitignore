@@ -1,1 +1,7 @@
 .omo/
+.env
+apps/desktop/node_modules/
+apps/desktop/out/
+apps/desktop/dist/
+apps/desktop/test-results/
+apps/desktop/playwright-report/
