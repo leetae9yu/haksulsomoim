@@ -1,131 +1,158 @@
-# 학술소모임 260811 Presentation Design System
+# Apple-Inspired Product Research Design Contract
 
-## 0. Research Log
+## 0. Reference log
 
-- Embedded references: shortlisted Stripe, Notion, IBM → picked Minimalist + Stripe because the topic needs academic restraint, legal credibility, and technical depth without decorative noise.
-- Lazyweb: skipped — this is an offline academic deck, not an app or web interaction surface.
-- Imagen drafts: skipped — no image-generation tool is available; all visuals will be editable vector diagrams built from the report.
-- Typography probe: `Noto Sans CJK KR` and `Source Code Pro` are installed and will be embedded by reference in the PPTX.
+- Required installation: `npx getdesign@latest add apple` produced `/DESIGN.md`.
+- Brand reference: Apple design analysis from getdesign and the bundled `apple.md`.
+- Execution reference: premium utilitarian minimalism for editorial hierarchy and restrained chrome.
+- Product constraint: borrow layout grammar and tokens only; do not copy Apple logos, product photography, or branded copy.
 
-## 1. Atmosphere & Identity
+## 1. Narrative and audience
 
-The deck should feel like a calm legal-technology briefing: precise, evidence-led, and sober enough for legal claims, but visually clear enough to present in fifteen minutes. The signature is the **evidence thread** — a thin purple route line that repeatedly connects facts, legal gates, product states, and implementation phases. The visual rhythm alternates warm paper-white analysis slides with deep-indigo decisive slides.
+The report and presentation describe a usable legal-tech product, not a legal memorandum.
+The primary audience is an interdisciplinary academic group that needs to understand the user journey,
+the concrete product functions, and the legal limits in that order.
 
-Primary audience: interdisciplinary academic study group members with mixed legal, policy, and technical backgrounds.
+The single narrative is:
 
-Presentation mode: 15-minute briefing plus discussion. Sixteen slides total; slide 16 is a reference appendix and may be skipped during the live talk.
+> 피해 발생 → 정보 1회 입력 → 공식 통지 기반 사건 추적 → 형사·민사 트랙 분기 →
+> 증거·서류 준비 → 강제집행 후속 관리
 
-## 2. Color
+Existing legal, evidence, privacy, and public-system research appears at the point where it validates or
+constrains a product function. It does not lead the story.
 
-| Role | Token | Value | Usage |
-|---|---|---|---|
-| Canvas | `paper` | `#F7F6F3` | Main slide background |
-| Surface | `white` | `#FFFFFF` | Cards and diagram nodes |
-| Heading | `navy` | `#061B31` | Titles and primary text |
-| Body | `slate` | `#526274` | Supporting copy |
-| Muted | `fog` | `#8A97A5` | Captions and source IDs |
-| Border | `line` | `#DCE5EE` | Dividers and cards |
-| Primary accent | `violet` | `#533AFD` | Evidence thread, key terms |
-| Accent pale | `lavender` | `#E9E7FF` | Selected states |
-| Safe | `green` | `#168A52` | Allowed / verified |
-| Caution | `amber` | `#A66712` | Conditional / unresolved |
-| Prohibited | `ruby` | `#C73555` | Illegal / banned |
-| Dark chapter | `indigo` | `#1C1E54` | Section emphasis slides |
+## 2. Atmosphere
 
-Rules:
-- Violet marks sequence, evidence, or the single main claim only.
-- Green, amber, and ruby are semantic; never decorative.
-- No gradients, stock photography, neon, or ornamental 3D objects.
-- Charts and diagrams must remain legible when printed in grayscale through shape, label, and ordering—not color alone.
+- Product editorial: quiet, exact, low-density, and confident.
+- Alternating scene rhythm: white or Apple Gray product explanation, then black decisive chapter.
+- One slide or report section makes one claim.
+- The user journey is the visual focal object: route lines, official-message mockups, evidence packets,
+  track switches, and enforcement status panels.
+- No decorative gradients, stock photos, glass cards, neon, or ornamental 3D.
 
-## 3. Typography
+## 3. Tokens
 
-| Role | Font | Size | Weight | Usage |
-|---|---|---:|---:|---|
-| Cover title | Noto Sans CJK KR | 28–32 pt | 700 | Two-line maximum |
-| Slide title | Noto Sans CJK KR | 22–26 pt | 700 | One line preferred |
-| Key statement | Noto Sans CJK KR | 20–24 pt | 700 | One memorable sentence |
-| Body | Noto Sans CJK KR | 14–17 pt | 400 | Maximum three bullets |
-| Label | Noto Sans CJK KR | 11–13 pt | 500 | Diagram nodes |
-| Metadata | Source Code Pro | 8–10 pt | 400 | Slide number, S-IDs |
+### Color
 
-Rules:
-- Korean particles, endings, and short clauses must not be orphaned.
-- No paragraph longer than three visual lines.
-- One slide = one claim. A slide that needs more than 55 Korean words of body copy must be reduced.
-- English appears only for established technical/legal labels in parentheses.
+| Role | Value | Use |
+|---|---|---|
+| Absolute black | `#000000` | Cover and decisive chapter scenes |
+| Apple gray | `#F5F5F7` | Main product scenes and report background bands |
+| Canvas | `#FFFFFF` | Cards, report pages, dense utility scenes |
+| Ink | `#1D1D1F` | Primary copy |
+| Secondary | `#6E6E73` | Supporting copy and qualifications |
+| Hairline | `#D2D2D7` | Borders and dividers |
+| Action blue | `#0071E3` | The only strong accent |
+| Link blue | `#0066CC` | Citations and supporting links |
+| Blue on dark | `#2997FF` | Labels on black scenes |
 
-## 4. Spacing & Layout
+Legal warning states use text labels and line styles first. A restrained red may appear only for a
+specific prohibited action; it is not part of the general palette.
 
-- Format: 16:9 widescreen, 13.333 × 7.5 inches.
-- Safe margin: 0.55 inches on all edges.
-- Grid: 12 columns; 0.18-inch gutters.
-- Title zone: top 0.50–1.20 inches.
-- Content zone: 1.35–6.75 inches.
-- Footer: slide number left, source IDs right.
-- Every slide must preserve at least 20% empty space.
+### Typography
 
-Layout families:
-1. **Statement** — one large claim + one proof strip.
-2. **Split** — 5/7 or 6/6 explanatory comparison.
-3. **Route** — horizontal or stepped evidence thread.
-4. **Matrix** — three semantic columns, maximum four rows.
-5. **Chapter** — deep indigo field with one white statement.
+Korean substitutes for SF Pro:
 
-## 5. Reusable Primitives
+- Display: `Noto Sans CJK KR`, weight 600.
+- Body: `Noto Sans CJK KR`, weight 400.
+- Metadata: `Source Code Pro`, weight 400.
 
-### Slide Frame
-- Structure: title, optional eyebrow, body region, source footer.
-- Variants: paper, dark chapter.
-- State: static; no animation required.
+Presentation:
 
-### Evidence Thread
-- Structure: 2.5 pt violet line, numbered nodes, arrow end.
-- Variants: horizontal route, stepped route, circular return.
-- Labels must sit above or below the line, never across it.
+| Role | Size | Weight |
+|---|---:|---:|
+| Cover display | 30–34 pt | 600 |
+| Slide display | 24–28 pt | 600 |
+| Product statement | 18–22 pt | 400–600 |
+| Body | 14–17 pt | 400 |
+| Label | 11–13 pt | 600 |
+| Source metadata | 9–10 pt | 400 |
 
-### Evidence Card
-- White surface, 1 pt border, 4 px-equivalent corner radius.
-- Optional semantic top rule: violet, green, amber, or ruby.
-- No shadow except one featured card with a restrained blue-tinted shadow.
+Report:
 
-### Gate Node
-- Rounded rectangle with gate number, short action label, and one outcome.
-- Minimum 0.95-inch width and 0.55-inch height.
-- The legal process route always proceeds left-to-right.
+| Role | Size |
+|---|---:|
+| Cover title | 25–29 pt |
+| Section title | 18–21 pt |
+| Subsection title | 13–15 pt |
+| Body | 9.8–10.5 pt |
+| Caption/source | 7.5–8.5 pt |
 
-### Spectrum Column
-- Three columns: 허용 / 조건부 / 금지.
-- Columns use icon-free text labels plus green / amber / ruby top rules.
-- Equal widths and aligned baselines.
+Korean phrases use `word-break: keep-all`. No one-character orphan lines, detached particles,
+or split parenthetical source labels.
 
-### Metric Tile
-- Large tabular number, one noun label, one-line qualification.
-- Numbers never appear without scope or denominator warning.
+## 4. Layout
 
-## 6. Motion & Interaction
+### Presentation
 
-- Static deck by default.
-- Build order may use simple appear transitions only if PowerPoint preserves them reliably.
-- No decorative motion, morph gimmicks, or animated charts.
-- The evidence thread itself provides narrative continuity without animation.
+- 16:9 canvas, 13.333 × 7.5 inches.
+- Safe margin: 0.58 inches.
+- 12-column conceptual grid.
+- A full scene is rectangular and edge-to-edge; do not round the slide canvas.
+- Utility cards use 12–18 px-equivalent radii and 1 pt hairlines.
+- At least 25% of every slide remains empty.
+- A slide contains at most one large diagram or four compact utility modules.
 
-## 7. Depth & Surface
+### Report
 
-- Strategy: tonal shift plus borders.
-- Cards are flat white on paper; hierarchy comes from spacing and top rules.
-- One dark chapter slide after each major narrative turn provides cadence.
-- No large rounded containers and no default PowerPoint shadows.
+- A4 portrait with 16–18 mm margins.
+- Reading width is narrow; paragraphs do not exceed approximately 42 Korean characters per line.
+- Major sections start with a high-whitespace statement band.
+- Product-flow diagrams and evidence tables are fixed-width and must not split across pages.
+- References use a compact appendix rather than dominating the main narrative.
 
-## 8. Accessibility Constraints & Accepted Debt
+## 5. Reusable primitives
 
-Constraints:
-- Minimum body size 14 pt; source metadata minimum 8 pt.
-- Body contrast target at least 4.5:1; large text at least 3:1.
-- Meaning is never carried by color alone.
-- All diagrams must have direct labels and a reading order.
-- Every one of the 16 rendered slides must pass independent visual and CJK review.
+### Product scene
 
-Accepted debt:
-- Speaker notes are optimized for a 15-minute Korean presentation and may require timing adjustment for a materially different event format.
+Large headline, one sentence, one dominant product-flow visual. Variants: light, gray, black.
 
+### Message analyzer
+
+An official-message facsimile on the left and extracted, user-confirmed fields on the right.
+It must visually distinguish source text, machine extraction, and human confirmation.
+
+### Route strip
+
+Four numbered stages with a single blue route line:
+`접수·추적 → 증거·서류 → 배상명령·별도 민사 준비 → 강제집행`.
+
+### Track switch
+
+Two parallel lanes: `Track A 배상명령` and `Track B 민사`.
+The switch represents data reuse and screen routing, never automatic legal conversion.
+
+### Evidence packet
+
+Original files, OCR extraction, user confirmation, and export preview. The original remains visibly
+separate from derived output.
+
+### Enforcement status panel
+
+`집행권원 → 재산명시·조회 → 압류·추심 → 미회수·시효관리`.
+No step implies guaranteed recovery.
+
+### Boundary spectrum
+
+Three columns: `지원`, `사용자 확인`, `금지`. Color is secondary to direct text labels.
+
+## 6. Copy rules
+
+- Product action precedes legal explanation.
+- Prefer `재사용`, `확인`, `안내`, `추적` over broad `자동화`.
+- Never claim direct KICS, court, ECRM, or TheCheat API integration.
+- Never claim automatic filing, automatic legal transition, fraud determination, victory probability,
+  recovery probability, or guaranteed collection.
+- `원클릭 전환` means reuse of confirmed data into the next preparation screen.
+- The deck contains 15 slides and is paced for 15 minutes.
+- Substantive report and slide prose is written by DeepSeek; omo owns structure, evidence constraints,
+  design, assembly, and verification.
+
+## 7. Accessibility and accepted debt
+
+- Body contrast meets 4.5:1 and large text meets 3:1.
+- Information is not encoded by color alone.
+- Minimum presentation body size is 14 pt; minimum visible source size is 9 pt.
+- Every rendered report page and all 15 slides require independent design and Korean/CJK review.
+- Accepted debt: SF Pro is unavailable on this Linux build, so Noto Sans CJK KR is the metric-safe
+  Korean substitute.
