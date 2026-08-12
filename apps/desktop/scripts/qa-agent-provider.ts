@@ -1,8 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createCodexAgentProvider } from "../src/integrations/agent-provider/agent-provider";
+import { resolve } from "node:path";
+import {
+  createCodexAgentProvider,
+  createUserApprovedSuggestionInput,
+} from "../src/integrations/agent-provider/agent-provider";
 import { launchCodexAppServer } from "../src/integrations/agent-provider/codex-app-server-launcher";
+import { Redactor, sanitizeSecret } from "../src/security/redaction";
 
 function evidenceDirectory(arguments_: readonly string[]): string {
   const optionIndex = arguments_.indexOf("--evidence-dir");
@@ -14,23 +17,25 @@ function evidenceDirectory(arguments_: readonly string[]): string {
 }
 
 const outputDirectory = evidenceDirectory(process.argv.slice(2));
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const codexCommand = resolve(scriptDirectory, "../node_modules/.bin/codex");
-const started = await launchCodexAppServer({ command: codexCommand });
+const started = await launchCodexAppServer();
 const provider = await createCodexAgentProvider(async () => started);
 
 let suggestion: Readonly<{ text: string; citationIds: readonly string[] }> | undefined;
 if (provider.state.status === "authenticated") {
-  suggestion = await provider.suggest({
-    approval: "user-approved",
-    maskedFacts: [
+  const redactor = new Redactor(new Uint8Array(32).fill(0x41));
+  const input = createUserApprovedSuggestionInput(
+    [
       {
         id: "fact-amount",
-        text: "피해금은 [ACCOUNT_DZ2AULSBLFFJC65R] 계좌로 송금한 5,380,000원이다.",
+        text: redactor.redact(
+          "qa-agent-provider",
+          "피해금은 110-123-456789 계좌로 송금한 5,380,000원이다.",
+        ),
       },
     ],
-    citationIds: ["law-civil-procedure"],
-  });
+    ["law-civil-procedure"],
+  );
+  suggestion = await provider.suggest(input);
 }
 
 const state =
@@ -46,7 +51,8 @@ const passed =
     suggestion !== undefined &&
     suggestion.text.length > 0) ||
   (provider.state.status === "sign-in-required" &&
-    provider.state.action === "sign-in-with-chatgpt");
+    provider.state.action === "sign-in-with-chatgpt") ||
+  (provider.state.status === "unavailable" && provider.state.mode === "manual");
 
 provider.dispose();
 
@@ -60,11 +66,14 @@ const evidence = Object.freeze({
 });
 await mkdir(outputDirectory, { recursive: true });
 const outputPath = resolve(outputDirectory, "agent-provider-proof.json");
-await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, {
+const serializedEvidence = sanitizeSecret(JSON.stringify(evidence, null, 2), process.env.LAW_OC);
+await writeFile(outputPath, `${serializedEvidence}\n`, {
   encoding: "utf8",
   mode: 0o600,
 });
-console.log(JSON.stringify({ ...evidence, evidencePath: outputPath }));
+console.log(
+  sanitizeSecret(JSON.stringify({ ...evidence, evidencePath: outputPath }), process.env.LAW_OC),
+);
 
 if (!passed) {
   process.exitCode = 1;

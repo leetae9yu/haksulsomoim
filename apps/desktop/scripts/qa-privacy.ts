@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Redactor } from "../src/security/redaction";
+import { Redactor, sanitizeSecret } from "../src/security/redaction";
 
 const identifiers = {
   account: "110-123-456789",
@@ -29,20 +29,34 @@ const rawText = [
 
 const redactor = new Redactor(new Uint8Array(32).fill(0x4c));
 const redacted = redactor.redact("qa-case-privacy", rawText);
+const lawQuery = redactor.redact(
+  "qa-case-privacy",
+  `계좌 ${identifiers.account} 사건 ${identifiers.caseNumber} 관련 법령`,
+);
 const rawMatches = Object.values(identifiers).filter((identifier) => redacted.includes(identifier));
+const lawQueryRawMatches = [identifiers.account, identifiers.caseNumber].filter((identifier) =>
+  lawQuery.includes(identifier),
+);
 const expectedTokenClasses = ["RRN", "PHONE", "ADDRESS", "ACCOUNT", "CASE"] as const;
 const maskedClasses = expectedTokenClasses.filter((kind) =>
   new RegExp(`\\[${kind}_[A-Z2-7]{16}\\]`, "u").test(redacted),
 );
 const stable = redacted === redactor.redact("qa-case-privacy", rawText);
 const passed =
-  rawMatches.length === 0 && maskedClasses.length === expectedTokenClasses.length && stable;
+  rawMatches.length === 0 &&
+  lawQueryRawMatches.length === 0 &&
+  lawQuery.includes("[ACCOUNT_") &&
+  lawQuery.includes("[CASE_") &&
+  maskedClasses.length === expectedTokenClasses.length &&
+  stable;
 
 const evidence = Object.freeze({
   scenario: "privacy-egress-redaction",
   status: passed ? "PASS" : "FAIL",
   maskedClasses,
   rawMatchCount: rawMatches.length,
+  lawQueryRawMatchCount: lawQueryRawMatches.length,
+  lawQuery,
   stableTokens: stable,
   redacted,
 });
@@ -50,12 +64,15 @@ const evidence = Object.freeze({
 const outputDirectory = evidenceDirectory(process.argv.slice(2));
 await mkdir(outputDirectory, { recursive: true });
 const outputPath = resolve(outputDirectory, "privacy-proof.json");
-await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, {
+const serializedEvidence = sanitizeSecret(JSON.stringify(evidence, null, 2), process.env.LAW_OC);
+await writeFile(outputPath, `${serializedEvidence}\n`, {
   encoding: "utf8",
   mode: 0o600,
 });
 
-console.log(JSON.stringify({ ...evidence, evidencePath: outputPath }));
+console.log(
+  sanitizeSecret(JSON.stringify({ ...evidence, evidencePath: outputPath }), process.env.LAW_OC),
+);
 
 if (!passed) {
   process.exitCode = 1;
