@@ -1,46 +1,30 @@
+import { sanitizeSecret } from "../../security/redaction";
 import { type ChatGptAccount, readChatGptAccount } from "./codex-account";
+import type {
+  CodexAppServerConnection,
+  CodexAppServerLauncher,
+  CodexAppServerNotification,
+} from "./codex-app-server-protocol";
 import {
   type AgentSuggestion,
   parseApprovedInput,
   parseSuggestion,
   SUGGESTION_OUTPUT_SCHEMA,
+  type UserApprovedSuggestionInput,
 } from "./suggestion-contracts";
 import { UnavailableCodexAgentProvider } from "./unavailable-provider";
 
 export type { ChatGptAccount } from "./codex-account";
+export type {
+  CodexAppServerConnection,
+  CodexAppServerLauncher,
+  CodexAppServerMethod,
+  CodexAppServerNotification,
+  CodexAppServerRequest,
+  CodexAppServerStartResult,
+} from "./codex-app-server-protocol";
 export type { AgentSuggestion, UserApprovedSuggestionInput } from "./suggestion-contracts";
-
-export type CodexAppServerMethod =
-  | "initialize"
-  | "account/read"
-  | "account/login/start"
-  | "thread/start"
-  | "turn/start";
-
-export type CodexAppServerRequest = Readonly<{
-  method: CodexAppServerMethod;
-  params: unknown;
-}>;
-
-export type CodexAppServerNotification = Readonly<{
-  method: "account/login/completed" | "account/updated" | "item/completed" | "turn/completed";
-  params: unknown;
-}>;
-
-export interface CodexAppServerConnection {
-  request(request: CodexAppServerRequest): Promise<unknown>;
-  notify(method: "initialized"): void;
-  close(): void;
-  onNotification(
-    listener: (notification: CodexAppServerNotification) => void | Promise<void>,
-  ): () => void;
-}
-
-export type CodexAppServerStartResult =
-  | Readonly<{ status: "ready"; connection: CodexAppServerConnection }>
-  | Readonly<{ status: "binary-unavailable"; reason: string }>;
-
-export type CodexAppServerLauncher = () => Promise<CodexAppServerStartResult>;
+export { createUserApprovedSuggestionInput } from "./suggestion-contracts";
 
 export type AgentProviderState =
   | Readonly<{
@@ -61,8 +45,8 @@ export type AgentProviderState =
 export interface CodexAgentProvider {
   readonly state: AgentProviderState;
   startChatGptLogin(): Promise<Readonly<{ loginId: string; authorizationUrl: string }>>;
-  suggest(input: unknown): Promise<AgentSuggestion>;
-  dispose(): void;
+  suggest(input: UserApprovedSuggestionInput): Promise<AgentSuggestion>;
+  dispose(): Promise<void>;
 }
 
 const SIGN_IN_REQUIRED: AgentProviderState = Object.freeze({
@@ -114,14 +98,24 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
     ) {
       throw new Error("Codex app-server returned an invalid ChatGPT login response");
     }
-    const authorizationUrl = new URL(response.authUrl);
-    if (authorizationUrl.protocol !== "https:") {
-      throw new Error("Codex ChatGPT authorization URL must use HTTPS");
+    let authorizationUrl: URL;
+    try {
+      authorizationUrl = new URL(response.authUrl);
+    } catch {
+      throw new Error("Codex ChatGPT authorization URL must use an official OpenAI auth host");
+    }
+    if (
+      authorizationUrl.protocol !== "https:" ||
+      authorizationUrl.hostname !== "auth.openai.com" ||
+      authorizationUrl.username !== "" ||
+      authorizationUrl.password !== ""
+    ) {
+      throw new Error("Codex ChatGPT authorization URL must use an official OpenAI auth host");
     }
     return Object.freeze({ loginId: response.loginId, authorizationUrl: authorizationUrl.href });
   }
 
-  async suggest(input: unknown): Promise<AgentSuggestion> {
+  async suggest(input: UserApprovedSuggestionInput): Promise<AgentSuggestion> {
     if (this.#state.status !== "authenticated") {
       throw new Error("ChatGPT sign-in is required before requesting a suggestion");
     }
@@ -166,7 +160,7 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
         if (!isRecord(turn) || turn.status !== "completed") {
           const message =
             isRecord(turn) && isRecord(turn.error) && typeof turn.error.message === "string"
-              ? turn.error.message
+              ? sanitizeSecret(turn.error.message, process.env.LAW_OC)
               : "Codex turn did not complete successfully";
           rejectCompletion?.(new Error(message));
           return;
@@ -200,9 +194,9 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
     }
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.#unsubscribe();
-    this.#connection.close();
+    await this.#connection.close();
   }
 
   async #refreshAccount(): Promise<void> {
@@ -235,9 +229,14 @@ export const createCodexAgentProvider = async (
 ): Promise<CodexAgentProvider> => {
   const started = await launchAppServer();
   if (started.status === "binary-unavailable") {
-    return new UnavailableCodexAgentProvider(started.reason);
+    return new UnavailableCodexAgentProvider(sanitizeSecret(started.reason, process.env.LAW_OC));
   }
   const provider = new AvailableCodexAgentProvider(started.connection);
-  await provider.initialize();
-  return provider;
+  try {
+    await provider.initialize();
+    return provider;
+  } catch (error) {
+    await provider.dispose();
+    throw error;
+  }
 };

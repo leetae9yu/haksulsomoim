@@ -1,6 +1,17 @@
-import { randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { link, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  CaseAlreadyExistsError,
+  type CaseDossier,
+  type CaseEvidence,
+  caseLocator,
+  decryptCase,
+  EvidenceAlreadyAttachedError,
+  encryptCase,
+  MalformedCaseDossierError,
+  UnknownCaseError,
+} from "./case-record";
 import {
   decryptEvidence,
   EvidenceAlreadyExistsError,
@@ -12,6 +23,15 @@ import {
 
 const OBJECT_ID_PATTERN = /^[a-f0-9]{32}$/;
 
+export {
+  CaseAlreadyExistsError,
+  type CaseDossier,
+  type CaseEvidence,
+  CorruptCaseDossierError,
+  EvidenceAlreadyAttachedError,
+  MalformedCaseDossierError,
+  UnknownCaseError,
+} from "./case-record";
 export {
   CorruptEvidenceError,
   EvidenceAlreadyExistsError,
@@ -53,6 +73,7 @@ async function removeTemporaryFile(path: string, operationError: unknown): Promi
 export class LocalCaseStore {
   readonly #rootPath: string;
   readonly #objectsPath: string;
+  readonly #casesPath: string;
   readonly #encryptionKey: Uint8Array;
   readonly #idGenerator: () => string;
 
@@ -66,13 +87,50 @@ export class LocalCaseStore {
 
     this.#rootPath = options.rootPath;
     this.#objectsPath = join(options.rootPath, "objects");
+    this.#casesPath = join(options.rootPath, "cases");
     this.#encryptionKey = Uint8Array.from(options.encryptionKey);
     this.#idGenerator = options.idGenerator ?? (() => randomBytes(16).toString("hex"));
   }
 
   async initialize(): Promise<void> {
     await mkdir(this.#rootPath, { recursive: true, mode: 0o700 });
-    await mkdir(this.#objectsPath, { recursive: true, mode: 0o700 });
+    await Promise.all([
+      mkdir(this.#objectsPath, { recursive: true, mode: 0o700 }),
+      mkdir(this.#casesPath, { recursive: true, mode: 0o700 }),
+    ]);
+  }
+
+  async createCase(dossier: CaseDossier): Promise<void> {
+    await this.initialize();
+    const locator = caseLocator(this.#encryptionKey, dossier.caseId);
+    await this.#writeCase(locator, encryptCase(this.#encryptionKey, locator, dossier), true);
+  }
+
+  async readCase(caseId: string): Promise<CaseDossier> {
+    const locator = caseLocator(this.#encryptionKey, caseId);
+    let serialized: string;
+    try {
+      serialized = await readFile(this.#casePath(locator), "utf8");
+    } catch (error) {
+      if (isNodeErrorWithCode(error, "ENOENT")) throw new UnknownCaseError({ cause: error });
+      throw error;
+    }
+    const dossier = decryptCase(this.#encryptionKey, locator, serialized);
+    if (dossier.caseId !== caseId) throw new MalformedCaseDossierError();
+    return dossier;
+  }
+
+  async attachEvidence(caseId: string, evidence: CaseEvidence): Promise<void> {
+    const dossier = await this.readCase(caseId);
+    if (dossier.evidence.some((item) => item.evidenceId === evidence.evidenceId)) {
+      throw new EvidenceAlreadyAttachedError();
+    }
+    const bytes = await this.readEvidence(evidence.evidenceId);
+    const actualHash = createHash("sha256").update(bytes).digest("hex");
+    if (actualHash !== evidence.sha256) throw new MalformedCaseDossierError();
+    const updated: CaseDossier = { ...dossier, evidence: [...dossier.evidence, evidence] };
+    const locator = caseLocator(this.#encryptionKey, caseId);
+    await this.#writeCase(locator, encryptCase(this.#encryptionKey, locator, updated), false);
   }
 
   async writeEvidence(originalBytes: Uint8Array): Promise<StoredEvidence> {
@@ -144,8 +202,38 @@ export class LocalCaseStore {
     return decryptEvidence(id, this.#encryptionKey, serialized);
   }
 
+  async #writeCase(locator: string, serialized: string, exclusive: boolean): Promise<void> {
+    const temporaryPath = join(this.#casesPath, `.${randomBytes(8).toString("hex")}.tmp`);
+    const file = await open(temporaryPath, "wx", 0o600);
+    try {
+      await file.writeFile(serialized, "utf8");
+      await file.sync();
+      await file.close();
+      if (exclusive) await link(temporaryPath, this.#casePath(locator));
+      else await rename(temporaryPath, this.#casePath(locator));
+      if (exclusive) await unlink(temporaryPath);
+      const directory = await open(this.#casesPath, "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    } catch (error) {
+      await file.close().catch(() => undefined);
+      await unlink(temporaryPath).catch(() => undefined);
+      if (exclusive && isNodeErrorWithCode(error, "EEXIST")) {
+        throw new CaseAlreadyExistsError({ cause: error });
+      }
+      throw error;
+    }
+  }
+
   #pathFor(id: string): string {
     return join(this.#objectsPath, `${id}.json`);
+  }
+
+  #casePath(locator: string): string {
+    return join(this.#casesPath, `${locator}.json`);
   }
 
   #assertValidId(id: string): void {

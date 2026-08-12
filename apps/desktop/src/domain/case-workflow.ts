@@ -8,7 +8,12 @@ export type OcrFact = Readonly<{
 }>;
 
 export type CriminalState = "evidence-review" | "complaint-ready" | "complaint-filed";
-export type CivilState = "pre-filing" | "payment-order-pending" | "enforceable-title-confirmed";
+export type CivilState =
+  | "pre-filing"
+  | "payment-order-pending"
+  | "service-attested"
+  | "judgment-recorded"
+  | "enforceable-title-confirmed";
 
 export type CaseWorkflow = Readonly<{
   caseType: "domestic-bank-transfer-fraud";
@@ -42,7 +47,13 @@ export type ParseCaseResult =
     }>;
 
 export type CriminalCommand = "prepare-complaint" | "file-complaint";
-export type CivilCommand = "apply-payment-order" | "confirm-enforceable-title";
+export type CivilCommand =
+  | "apply-payment-order"
+  | "attest-service"
+  | "record-judgment"
+  | "attest-finality";
+type CivilAttestationCommand = "attest-service" | "attest-finality";
+type CivilProgressCommand = Exclude<CivilCommand, CivilAttestationCommand>;
 
 export type EnforcementChoice = Readonly<
   | { kind: "asset-inquiry"; condition: "enforceable-title-confirmed" }
@@ -167,8 +178,17 @@ export function advanceCriminal(
 
 export function advanceCivil(
   workflow: CaseWorkflow,
+  command: CivilProgressCommand,
+): DomainOutcome<CaseWorkflow>;
+export function advanceCivil(
+  workflow: CaseWorkflow,
+  command: CivilAttestationCommand,
+  userAttested: boolean,
+): DomainOutcome<CaseWorkflow>;
+export function advanceCivil(
+  workflow: CaseWorkflow,
   command: CivilCommand,
-  userConfirmed = false,
+  userAttested?: boolean,
 ): DomainOutcome<CaseWorkflow> {
   switch (workflow.civilState) {
     case "pre-filing":
@@ -176,10 +196,21 @@ export function advanceCivil(
         ? { status: "ok", value: { ...workflow, civilState: "payment-order-pending" } }
         : { status: "not-allowed", reason: "transition-not-available" };
     case "payment-order-pending":
-      if (command !== "confirm-enforceable-title") {
+      if (command !== "attest-service") {
         return { status: "not-allowed", reason: "transition-not-available" };
       }
-      return userConfirmed
+      return userAttested === true
+        ? { status: "ok", value: { ...workflow, civilState: "service-attested" } }
+        : { status: "not-allowed", reason: "user-confirmation-required" };
+    case "service-attested":
+      return command === "record-judgment"
+        ? { status: "ok", value: { ...workflow, civilState: "judgment-recorded" } }
+        : { status: "not-allowed", reason: "transition-not-available" };
+    case "judgment-recorded":
+      if (command !== "attest-finality") {
+        return { status: "not-allowed", reason: "transition-not-available" };
+      }
+      return userAttested === true
         ? {
             status: "ok",
             value: { ...workflow, civilState: "enforceable-title-confirmed" },

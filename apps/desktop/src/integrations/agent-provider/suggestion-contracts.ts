@@ -1,6 +1,8 @@
+import type { RedactedText } from "../../security/redaction";
+
 export type UserApprovedSuggestionInput = Readonly<{
   approval: "user-approved";
-  maskedFacts: readonly Readonly<{ id: string; text: string }>[];
+  maskedFacts: readonly Readonly<{ id: string; text: RedactedText }>[];
   citationIds: readonly string[];
 }>;
 
@@ -15,7 +17,7 @@ export const SUGGESTION_OUTPUT_SCHEMA = Object.freeze({
   required: ["text", "citationIds"],
   properties: {
     text: { type: "string" },
-    citationIds: { type: "array", items: { type: "string" }, uniqueItems: true },
+    citationIds: { type: "array", items: { type: "string" } },
   },
 });
 
@@ -29,7 +31,16 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
-export function parseApprovedInput(input: unknown): UserApprovedSuggestionInput {
+export function createUserApprovedSuggestionInput(
+  maskedFacts: readonly Readonly<{ id: string; text: RedactedText }>[],
+  citationIds: readonly string[],
+): UserApprovedSuggestionInput {
+  return parseApprovedInput({ approval: "user-approved", maskedFacts, citationIds });
+}
+
+export function parseApprovedInput(
+  input: UserApprovedSuggestionInput,
+): UserApprovedSuggestionInput {
   if (
     !isRecord(input) ||
     !hasExactKeys(input, ["approval", "maskedFacts", "citationIds"]) ||
@@ -42,7 +53,7 @@ export function parseApprovedInput(input: unknown): UserApprovedSuggestionInput 
     );
   }
 
-  const maskedFacts: Array<Readonly<{ id: string; text: string }>> = [];
+  const maskedFacts: Array<Readonly<{ id: string; text: RedactedText }>> = [];
   for (const fact of input.maskedFacts) {
     if (
       !isRecord(fact) ||
@@ -54,7 +65,7 @@ export function parseApprovedInput(input: unknown): UserApprovedSuggestionInput 
     ) {
       throw new Error("Every user-approved masked fact must have a non-empty id and text");
     }
-    maskedFacts.push(Object.freeze({ id: fact.id, text: fact.text }));
+    maskedFacts.push(Object.freeze({ id: fact.id, text: fact.text as RedactedText }));
   }
 
   if (!input.citationIds.every((id): id is string => typeof id === "string" && id.length > 0)) {
@@ -90,6 +101,9 @@ export function parseSuggestion(
   const approved = new Set(approvedCitationIds);
   if (value.citationIds.some((id) => !approved.has(id))) {
     throw new Error("Codex returned a citation that the user did not approve");
+  }
+  if (new Set(value.citationIds).size !== value.citationIds.length) {
+    throw new Error("Codex returned duplicate citation IDs");
   }
   return Object.freeze({ text: value.text, citationIds: Object.freeze([...value.citationIds]) });
 }

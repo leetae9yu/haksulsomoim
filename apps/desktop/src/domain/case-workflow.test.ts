@@ -22,7 +22,7 @@ const domesticTransferInput = {
   ],
 };
 
-function acceptedCase(input: unknown): CaseWorkflow {
+function acceptedCase(input: unknown = domesticTransferInput): CaseWorkflow {
   const result = parseCaseInput(input);
   expect(result.status).toBe("accepted");
   if (result.status !== "accepted") {
@@ -39,10 +39,94 @@ function outcomeValue<T>(outcome: DomainOutcome<T>): T {
   return outcome.value;
 }
 
-describe("domestic bank-transfer fraud case workflow", () => {
-  test("accepts a KRW 5,380,000 case and treats OCR facts as unconfirmed", () => {
-    const workflow = acceptedCase(domesticTransferInput);
+function confirmedCase(): CaseWorkflow {
+  return outcomeValue(confirmOcrFacts(acceptedCase()));
+}
 
+describe("separate criminal and civil tracks", () => {
+  test("progresses the criminal complaint without advancing the civil track", () => {
+    const prepared = outcomeValue(advanceCriminal(confirmedCase(), "prepare-complaint"));
+    expect(prepared).toMatchObject({
+      criminalState: "complaint-ready",
+      civilState: "pre-filing",
+    });
+
+    const filed = outcomeValue(advanceCriminal(prepared, "file-complaint"));
+    expect(filed).toMatchObject({
+      criminalState: "complaint-filed",
+      civilState: "pre-filing",
+    });
+  });
+
+  test("progresses civil service, judgment, and finality without advancing criminal complaint", () => {
+    const pending = outcomeValue(advanceCivil(confirmedCase(), "apply-payment-order"));
+    const served = outcomeValue(advanceCivil(pending, "attest-service", true));
+    expect(served).toMatchObject({
+      criminalState: "evidence-review",
+      civilState: "service-attested",
+    });
+
+    const judged = outcomeValue(advanceCivil(served, "record-judgment"));
+    expect(judged).toMatchObject({
+      criminalState: "evidence-review",
+      civilState: "judgment-recorded",
+    });
+
+    const final = outcomeValue(advanceCivil(judged, "attest-finality", true));
+    expect(final).toMatchObject({
+      criminalState: "evidence-review",
+      civilState: "enforceable-title-confirmed",
+    });
+  });
+});
+
+describe("enforceable title attestations", () => {
+  test("requires user-attested service and does not permit skipping to judgment", () => {
+    const pending = outcomeValue(advanceCivil(confirmedCase(), "apply-payment-order"));
+
+    expect(advanceCivil(pending, "attest-service", false)).toEqual({
+      status: "not-allowed",
+      reason: "user-confirmation-required",
+    });
+    expect(advanceCivil(pending, "record-judgment")).toEqual({
+      status: "not-allowed",
+      reason: "transition-not-available",
+    });
+    expect(enforcementChoices(pending)).toEqual({
+      status: "not-allowed",
+      reason: "enforceable-title-required",
+    });
+  });
+
+  test("requires user-attested finality after judgment before enforcement", () => {
+    const pending = outcomeValue(advanceCivil(confirmedCase(), "apply-payment-order"));
+    const served = outcomeValue(advanceCivil(pending, "attest-service", true));
+    const judged = outcomeValue(advanceCivil(served, "record-judgment"));
+
+    expect(advanceCivil(judged, "attest-finality", false)).toEqual({
+      status: "not-allowed",
+      reason: "user-confirmation-required",
+    });
+    expect(enforcementChoices(judged)).toEqual({
+      status: "not-allowed",
+      reason: "enforceable-title-required",
+    });
+
+    const final = outcomeValue(advanceCivil(judged, "attest-finality", true));
+    expect(enforcementChoices(final)).toEqual({
+      status: "ok",
+      value: [
+        { kind: "asset-inquiry", condition: "enforceable-title-confirmed" },
+        { kind: "seizure-and-collection", condition: "attachable-asset-identified" },
+        { kind: "debtor-registry", condition: "statutory-requirements-met" },
+      ],
+    });
+  });
+});
+
+describe("case intake boundary", () => {
+  test("accepts an in-scope case with pending OCR facts", () => {
+    const workflow = acceptedCase();
     expect(workflow.caseType).toBe("domestic-bank-transfer-fraud");
     expect(Number(workflow.amountKrw)).toBe(5_380_000);
     expect(workflow.ocrFacts).toEqual([
@@ -55,64 +139,17 @@ describe("domestic bank-transfer fraud case workflow", () => {
     });
   });
 
-  test("advances criminal and civil tracks independently after explicit OCR confirmation", () => {
-    const initial = acceptedCase(domesticTransferInput);
-    const confirmed = outcomeValue(confirmOcrFacts(initial));
-    expect(confirmed.ocrFacts.every((fact) => fact.confirmation === "confirmed")).toBe(true);
-
-    const criminalAdvanced = outcomeValue(advanceCriminal(confirmed, "prepare-complaint"));
-    expect(criminalAdvanced.criminalState).toBe("complaint-ready");
-    expect(criminalAdvanced.civilState).toBe("pre-filing");
-
-    const civilAdvanced = outcomeValue(advanceCivil(criminalAdvanced, "apply-payment-order"));
-    expect(civilAdvanced.criminalState).toBe("complaint-ready");
-    expect(civilAdvanced.civilState).toBe("payment-order-pending");
+  test.each([1, 30_000_000])("accepts integer KRW boundary amount: %d", (amount) => {
+    expect(parseCaseInput({ ...domesticTransferInput, amount }).status).toBe("accepted");
   });
 
-  test("unlocks conditional enforcement choices only for a user-confirmed enforceable title", () => {
-    const confirmed = outcomeValue(confirmOcrFacts(acceptedCase(domesticTransferInput)));
-    const paymentOrder = outcomeValue(advanceCivil(confirmed, "apply-payment-order"));
-
-    expect(enforcementChoices(paymentOrder)).toEqual({
-      status: "not-allowed",
-      reason: "enforceable-title-required",
-    });
-    expect(advanceCivil(paymentOrder, "confirm-enforceable-title", false)).toEqual({
-      status: "not-allowed",
-      reason: "user-confirmation-required",
-    });
-
-    const titled = outcomeValue(advanceCivil(paymentOrder, "confirm-enforceable-title", true));
-    expect(titled.civilState).toBe("enforceable-title-confirmed");
-    expect(enforcementChoices(titled)).toEqual({
-      status: "ok",
-      value: [
-        { kind: "asset-inquiry", condition: "enforceable-title-confirmed" },
-        { kind: "seizure-and-collection", condition: "attachable-asset-identified" },
-        { kind: "debtor-registry", condition: "statutory-requirements-met" },
-      ],
+  test.each([0, 1.5, 30_000_001])("rejects unsupported KRW amount: %s", (amount) => {
+    expect(parseCaseInput({ ...domesticTransferInput, amount })).toEqual({
+      status: "rejected",
+      reason: "invalid-input",
+      data: { supportedCase: "KRW domestic bank-transfer fraud" },
     });
   });
-});
-
-describe("case intake boundary", () => {
-  test.each([1, 30_000_000])(
-    "accepts integer KRW amounts at the inclusive boundary: %d",
-    (amount) => {
-      expect(parseCaseInput({ ...domesticTransferInput, amount }).status).toBe("accepted");
-    },
-  );
-
-  test.each([0, 1.5, 30_000_001])(
-    "rejects an amount outside the supported integer range: %s",
-    (amount) => {
-      expect(parseCaseInput({ ...domesticTransferInput, amount })).toEqual({
-        status: "rejected",
-        reason: "invalid-input",
-        data: { supportedCase: "KRW domestic bank-transfer fraud" },
-      });
-    },
-  );
 
   test.each([{ jurisdiction: "international" }, { paymentMethod: "card" }])(
     "returns neutral data for an out-of-scope case: %o",

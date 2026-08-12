@@ -11,7 +11,12 @@ export interface RedactedDiagnostic {
   readonly fields: Readonly<Record<string, RedactedText>>;
 }
 
-type IdentifierKind = "RRN" | "PHONE" | "ADDRESS" | "ACCOUNT" | "CASE";
+type IdentifierKind = "RRN" | "PHONE" | "ADDRESS" | "ACCOUNT" | "CASE" | "EMAIL" | "PERSON";
+
+export interface StructuredSensitiveFields {
+  readonly email?: readonly string[];
+  readonly personName?: readonly string[];
+}
 
 interface IdentifierPattern {
   readonly kind: IdentifierKind;
@@ -78,15 +83,38 @@ export class Redactor {
   }
 
   redact(caseId: string, input: string): RedactedText {
+    return this.redactStructured(caseId, input, {});
+  }
+
+  redactStructured(caseId: string, input: string, fields: StructuredSensitiveFields): RedactedText {
     if (caseId.length === 0) {
       throw new TypeError("A non-empty case id is required for redaction");
     }
 
     let output = input;
+    const structuredValues = [
+      ...this.#structuredValues("EMAIL", fields.email),
+      ...this.#structuredValues("PERSON", fields.personName),
+    ] as const;
+    for (const { kind, value } of structuredValues) {
+      output = output.replaceAll(value, this.#token(caseId, kind, value));
+    }
     for (const { kind, pattern } of IDENTIFIER_PATTERNS) {
       output = output.replace(pattern, (identifier) => this.#token(caseId, kind, identifier));
     }
     return output as RedactedText;
+  }
+
+  #structuredValues(
+    kind: "EMAIL" | "PERSON",
+    values: readonly string[] | undefined,
+  ): ReadonlyArray<Readonly<{ kind: "EMAIL" | "PERSON"; value: string }>> {
+    return (values ?? []).map((value) => {
+      if (value.length === 0) {
+        throw new TypeError(`Structured ${kind.toLowerCase()} fields must not be empty`);
+      }
+      return { kind, value };
+    });
   }
 
   #token(caseId: string, kind: IdentifierKind, identifier: string): string {
@@ -99,6 +127,13 @@ export class Redactor {
       .digest();
     return `[${kind}_${base32Prefix(digest, 16)}]`;
   }
+}
+
+export function sanitizeSecret(text: string, secret: string | undefined): string {
+  const values = [...new Set([secret, secret?.trim()])]
+    .filter((value): value is string => value !== undefined && value.length > 0)
+    .sort((left, right) => right.length - left.length);
+  return values.reduce((sanitized, value) => sanitized.replaceAll(value, "[REDACTED]"), text);
 }
 
 export function createRedactedDiagnostic(

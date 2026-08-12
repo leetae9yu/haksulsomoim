@@ -17,12 +17,17 @@ const RECORD_KEYS = [
   "version",
 ] as const;
 
-type LocalCaseStoreErrorCode =
+export type LocalCaseStoreErrorCode =
+  | "CASE_ALREADY_EXISTS"
+  | "CORRUPT_CASE_DOSSIER"
   | "CORRUPT_EVIDENCE"
+  | "EVIDENCE_ALREADY_ATTACHED"
   | "EVIDENCE_ALREADY_EXISTS"
   | "EVIDENCE_NOT_FOUND"
   | "INVALID_EVIDENCE_ID"
-  | "MALFORMED_EVIDENCE";
+  | "MALFORMED_CASE_DOSSIER"
+  | "MALFORMED_EVIDENCE"
+  | "UNKNOWN_CASE";
 
 export class LocalCaseStoreError extends Error {
   readonly code: LocalCaseStoreErrorCode;

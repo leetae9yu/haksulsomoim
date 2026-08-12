@@ -32,6 +32,22 @@ describe("Redactor", () => {
     expect(redacted).toMatch(/\[CASE_[A-Z0-9]{16}\]/);
   });
 
+  test("redacts email and person-name fields at the explicit structured-data boundary", () => {
+    const redactor = new Redactor(tokenKey);
+    const email = "claimant@example.com";
+    const personName = "홍길동";
+    const redacted = redactor.redactStructured(
+      "case-alpha",
+      `${personName} (${email})이 신청했습니다.`,
+      { email: [email], personName: [personName] },
+    );
+
+    expect(redacted).not.toContain(email);
+    expect(redacted).not.toContain(personName);
+    expect(redacted).toMatch(/\[EMAIL_[A-Z0-9]{16}\]/);
+    expect(redacted).toMatch(/\[PERSON_[A-Z0-9]{16}\]/);
+  });
+
   test("uses stable tokens within one case and unlinkable tokens across cases", () => {
     const redactor = new Redactor(tokenKey);
     const repeated = "010-1234-5678 / 010-1234-5678";

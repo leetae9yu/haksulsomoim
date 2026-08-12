@@ -12,12 +12,12 @@ import {
   TesseractJsLocalOcrAdapter,
 } from "./local-ocr";
 
-const require = createRequire(import.meta.url);
+const moduleRequire = createRequire(import.meta.url);
 const LANGUAGES = "kor+eng";
 
 const trainedDataPath = (languagePackage: string, language: string): string =>
   join(
-    dirname(require.resolve(`${languagePackage}/package.json`)),
+    dirname(moduleRequire.resolve(`${languagePackage}/package.json`)),
     "4.0.0_best_int",
     `${language}.traineddata.gz`,
   );

@@ -1,209 +1,151 @@
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import type {
-  CodexAppServerConnection,
-  CodexAppServerLauncher,
-  CodexAppServerNotification,
-  CodexAppServerRequest,
-} from "./agent-provider";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, join } from "node:path";
+import { sanitizeSecret } from "../../security/redaction";
+import { JsonLineConnection } from "./codex-app-server-connection";
+import type { CodexAppServerLauncher, CodexJsonLineProcess } from "./codex-app-server-protocol";
+import { spawnCodexProcess } from "./codex-process";
 
-export interface CodexJsonLineProcess {
-  send(line: string): void;
-  onLine(listener: (line: string) => void): () => void;
-  onExit(listener: (error?: Error) => void): () => void;
-  close(): void;
-}
+export type { CodexJsonLineProcess } from "./codex-app-server-protocol";
 
 export type CodexProcessFactory = (
   command: string,
   args: readonly string[],
+  env: Readonly<Record<string, string>>,
 ) => Promise<CodexJsonLineProcess>;
 
 export interface LaunchCodexAppServerOptions {
   command?: string;
   processFactory?: CodexProcessFactory;
+  resolveExecutable?: () => string;
+  environment?: Readonly<Record<string, string | undefined>>;
+  onNotificationError?: (error: Error) => void;
 }
 
-type PendingRequest = Readonly<{
-  resolve(value: unknown): void;
-  reject(error: Error): void;
-}>;
+const CODEX_ENV_ALLOWLIST = [
+  "APPDATA",
+  "CODEX_HOME",
+  "HOME",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "LANG",
+  "LC_ALL",
+  "LOCALAPPDATA",
+  "NO_PROXY",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+] as const;
 
-const NOTIFICATION_METHODS = new Set<CodexAppServerNotification["method"]>([
-  "account/login/completed",
-  "account/updated",
-  "item/completed",
-  "turn/completed",
-]);
+const PLATFORM_TARGETS: Readonly<
+  Record<string, Readonly<{ packageName: string; triple: string; executable: string }>>
+> = {
+  "darwin-arm64": {
+    packageName: "@openai/codex-darwin-arm64",
+    triple: "aarch64-apple-darwin",
+    executable: "codex",
+  },
+  "darwin-x64": {
+    packageName: "@openai/codex-darwin-x64",
+    triple: "x86_64-apple-darwin",
+    executable: "codex",
+  },
+  "linux-arm64": {
+    packageName: "@openai/codex-linux-arm64",
+    triple: "aarch64-unknown-linux-musl",
+    executable: "codex",
+  },
+  "linux-x64": {
+    packageName: "@openai/codex-linux-x64",
+    triple: "x86_64-unknown-linux-musl",
+    executable: "codex",
+  },
+  "win32-arm64": {
+    packageName: "@openai/codex-win32-arm64",
+    triple: "aarch64-pc-windows-msvc",
+    executable: "codex.exe",
+  },
+  "win32-x64": {
+    packageName: "@openai/codex-win32-x64",
+    triple: "x86_64-pc-windows-msvc",
+    executable: "codex.exe",
+  },
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNotification(value: Record<string, unknown>): value is {
-  method: CodexAppServerNotification["method"];
-  params: unknown;
-} {
-  return typeof value.method === "string" && NOTIFICATION_METHODS.has(value.method as never);
+function allowlistedEnvironment(
+  source: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const name of CODEX_ENV_ALLOWLIST) {
+    const value = source[name];
+    if (value !== undefined && value.length > 0 && !value.startsWith("()")) {
+      environment[name] = value;
+    }
+  }
+  return environment;
 }
 
-class JsonLineConnection implements CodexAppServerConnection {
-  readonly #process: CodexJsonLineProcess;
-  readonly #pending = new Map<number, PendingRequest>();
-  readonly #listeners = new Set<
-    (notification: CodexAppServerNotification) => void | Promise<void>
-  >();
-  #nextId = 1;
-  #closed = false;
-  readonly #removeLineListener: () => void;
-  readonly #removeExitListener: () => void;
-
-  constructor(process: CodexJsonLineProcess) {
-    this.#process = process;
-    this.#removeLineListener = process.onLine((line) => this.#handleLine(line));
-    this.#removeExitListener = process.onExit((error) => this.#handleExit(error));
-  }
-
-  request(request: CodexAppServerRequest): Promise<unknown> {
-    if (this.#closed) return Promise.reject(new Error("Codex app-server connection is closed"));
-    const id = this.#nextId++;
-    return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      try {
-        this.#process.send(`${JSON.stringify({ id, ...request })}\n`);
-      } catch (error) {
-        this.#pending.delete(id);
-        reject(error instanceof Error ? error : new Error("Failed to write to Codex app-server"));
-      }
+export function resolveCodexExecutable(): string {
+  const target = PLATFORM_TARGETS[`${process.platform}-${process.arch}`];
+  if (target === undefined) {
+    throw Object.assign(new Error("The official Codex binary is unavailable on this platform"), {
+      code: "ENOENT",
     });
   }
 
-  notify(method: "initialized"): void {
-    if (this.#closed) throw new Error("Codex app-server connection is closed");
-    this.#process.send(`${JSON.stringify({ method })}\n`);
-  }
-
-  onNotification(
-    listener: (notification: CodexAppServerNotification) => void | Promise<void>,
-  ): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  close(): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#removeLineListener();
-    this.#removeExitListener();
-    this.#rejectPending(new Error("Codex app-server connection closed"));
-    this.#process.close();
-  }
-
-  #handleLine(line: string): void {
-    let message: unknown;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (!isRecord(message)) return;
-
-    if (typeof message.id === "number") {
-      const pending = this.#pending.get(message.id);
-      if (pending === undefined) return;
-      this.#pending.delete(message.id);
-      if (isRecord(message.error)) {
-        const detail =
-          typeof message.error.message === "string"
-            ? message.error.message
-            : "Codex app-server request failed";
-        pending.reject(new Error(detail));
-      } else {
-        pending.resolve(message.result);
-      }
-      return;
-    }
-
-    if (isNotification(message)) {
-      const notification = Object.freeze({ method: message.method, params: message.params });
-      for (const listener of this.#listeners) void listener(notification);
-    }
-  }
-
-  #handleExit(error?: Error): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#removeLineListener();
-    this.#removeExitListener();
-    this.#rejectPending(error ?? new Error("Codex app-server exited"));
-  }
-
-  #rejectPending(error: Error): void {
-    for (const pending of this.#pending.values()) pending.reject(error);
-    this.#pending.clear();
-  }
-}
-
-async function spawnCodexProcess(
-  command: string,
-  args: readonly string[],
-): Promise<CodexJsonLineProcess> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
+  const require = createRequire(import.meta.url);
+  let packageJson: string;
+  try {
+    packageJson = require.resolve(`${target.packageName}/package.json`);
+  } catch {
+    throw Object.assign(new Error("The packaged official Codex binary is unavailable"), {
+      code: "ENOENT",
     });
-    const handleError = (error: Error) => reject(error);
-    child.once("error", handleError);
-    child.once("spawn", () => {
-      child.off("error", handleError);
-      const lines = createInterface({ input: child.stdout });
-      const lineListeners = new Set<(line: string) => void>();
-      const exitListeners = new Set<(error?: Error) => void>();
-      lines.on("line", (line) => {
-        for (const listener of lineListeners) listener(line);
-      });
-      child.once("error", (error) => {
-        for (const listener of exitListeners) listener(error);
-      });
-      child.once("exit", () => {
-        for (const listener of exitListeners) listener();
-      });
-      child.stderr.resume();
-      resolve({
-        send(line) {
-          if (!child.stdin.write(line)) {
-            throw new Error("Codex app-server stdin is not writable");
-          }
-        },
-        onLine(listener) {
-          lineListeners.add(listener);
-          return () => lineListeners.delete(listener);
-        },
-        onExit(listener) {
-          exitListeners.add(listener);
-          return () => exitListeners.delete(listener);
-        },
-        close() {
-          lines.close();
-          child.stdin.end();
-          if (!child.killed) child.kill();
-        },
-      });
+  }
+  const executable = join(dirname(packageJson), "vendor", target.triple, "bin", target.executable);
+  const unpackedExecutable = executable.replace("app.asar", "app.asar.unpacked");
+  const resolved = [unpackedExecutable, executable].find((candidate) => existsSync(candidate));
+  if (resolved === undefined) {
+    throw Object.assign(new Error("The packaged official Codex binary is unavailable"), {
+      code: "ENOENT",
     });
-  });
+  }
+  return resolved;
 }
 
 export const launchCodexAppServer = (
   options: LaunchCodexAppServerOptions = {},
 ): ReturnType<CodexAppServerLauncher> => {
-  const command = options.command ?? "codex";
+  const sourceEnvironment = options.environment ?? process.env;
+  const sanitizeError = (message: string): string =>
+    sanitizeSecret(message, sourceEnvironment.LAW_OC);
   const processFactory = options.processFactory ?? spawnCodexProcess;
-  return processFactory(command, ["app-server", "--stdio"])
+  const reportNotificationError =
+    options.onNotificationError ??
+    ((error: Error) => console.error("Codex notification listener failed", error));
+
+  return Promise.resolve()
+    .then(() => {
+      const command = options.command ?? (options.resolveExecutable ?? resolveCodexExecutable)();
+      if (!isAbsolute(command)) {
+        throw new TypeError("Codex executable must be an explicit absolute path");
+      }
+      return processFactory(
+        command,
+        ["app-server", "--stdio"],
+        allowlistedEnvironment(sourceEnvironment),
+      );
+    })
     .then((process) => ({
       status: "ready" as const,
-      connection: new JsonLineConnection(process),
+      connection: new JsonLineConnection(process, sanitizeError, reportNotificationError),
     }))
     .catch((error: unknown) => {
       if (isRecord(error) && error.code === "ENOENT") {
@@ -212,6 +154,7 @@ export const launchCodexAppServer = (
           reason: "The official Codex app-server binary is unavailable",
         };
       }
-      throw error;
+      if (error instanceof Error) throw new Error(sanitizeError(error.message));
+      throw new Error("Failed to launch the official Codex app-server binary");
     });
 };

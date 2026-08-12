@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { KoreanLawCitation, KoreanLawToolName } from "./korean-law-mcp";
 
 type ObjectValue = Record<string, unknown>;
@@ -12,6 +13,32 @@ function readString(object: ObjectValue, keys: readonly string[]): string | unde
     if (typeof value === "string" && value.trim() !== "") return value;
   }
   return undefined;
+}
+
+const OFFICIAL_KOREAN_LAW_ORIGINS = new Set(["https://law.go.kr", "https://www.law.go.kr"]);
+
+function citationId(
+  resultDigest: string,
+  sourceUrl: string,
+  law: string,
+  versionDate: string,
+  retrievedAt: string,
+  toolName: KoreanLawToolName,
+): string {
+  return createHash("sha256")
+    .update([resultDigest, sourceUrl, law, versionDate, retrievedAt, toolName].join("\0"))
+    .digest("hex");
+}
+
+function isOfficialCitationUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      OFFICIAL_KOREAN_LAW_ORIGINS.has(url.origin) && url.username === "" && url.password === ""
+    );
+  } catch {
+    return false;
+  }
 }
 
 function citationCandidates(result: ObjectValue): unknown[] {
@@ -50,9 +77,11 @@ function deriveOfficialLawCitation(
   const versionDate = effectiveDate === undefined ? undefined : formatBasicDate(effectiveDate);
   if (lawName === undefined || lawName.length === 0) return undefined;
   if (versionDate === undefined) return undefined;
+  const sourceUrl = `https://www.law.go.kr/법령/${lawName}`;
 
   return {
-    sourceUrl: `https://www.law.go.kr/법령/${lawName}`,
+    citationId: citationId(resultDigest, sourceUrl, lawName, versionDate, retrievedAt, toolName),
+    sourceUrl,
     law: lawName,
     versionDate,
     retrievedAt,
@@ -79,15 +108,23 @@ export function parseKoreanLawCitations(
       "effectiveDate",
       "effective_date",
     ]);
-    if (sourceUrl === undefined || law === undefined || versionDate === undefined) continue;
+    if (
+      sourceUrl === undefined ||
+      !isOfficialCitationUrl(sourceUrl) ||
+      law === undefined ||
+      versionDate === undefined
+    )
+      continue;
 
+    const retrievedAt =
+      readString(candidate, ["retrievedAt", "retrievalTime", "retrieval_time", "retrieved_at"]) ??
+      fallbackRetrievalTime;
     citations.push({
+      citationId: citationId(resultDigest, sourceUrl, law, versionDate, retrievedAt, toolName),
       sourceUrl,
       law,
       versionDate,
-      retrievedAt:
-        readString(candidate, ["retrievedAt", "retrievalTime", "retrieval_time", "retrieved_at"]) ??
-        fallbackRetrievalTime,
+      retrievedAt,
       toolName,
       resultDigest,
     });
@@ -102,5 +139,5 @@ export function parseKoreanLawCitations(
     );
     if (derived !== undefined) citations.push(derived);
   }
-  return citations;
+  return [...new Map(citations.map((citation) => [citation.citationId, citation])).values()];
 }

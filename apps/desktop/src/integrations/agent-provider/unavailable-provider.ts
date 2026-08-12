@@ -20,5 +20,5 @@ export class UnavailableCodexAgentProvider implements CodexAgentProvider {
     throw new Error("The official Codex binary is unavailable; use manual mode");
   }
 
-  dispose(): void {}
+  async dispose(): Promise<void> {}
 }

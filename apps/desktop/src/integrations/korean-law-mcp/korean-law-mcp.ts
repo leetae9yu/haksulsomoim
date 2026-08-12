@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getDefaultEnvironment,
@@ -6,6 +9,7 @@ import {
   type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { sanitizeSecret } from "../../security/redaction";
 import { parseKoreanLawCitations } from "./citation-parser";
 
 export const ALLOWED_KOREAN_LAW_TOOLS = [
@@ -29,11 +33,13 @@ export interface KoreanLawMcpLaunchOptions {
 
 export interface KoreanLawMcpClient {
   connect(transport: unknown): Promise<void>;
+  listTools(): Promise<unknown>;
   callTool(request: { name: string; arguments?: Record<string, unknown> }): Promise<unknown>;
   close(): Promise<void>;
 }
 
 export interface KoreanLawCitation {
+  citationId: string;
   sourceUrl: string;
   law: string;
   versionDate: string;
@@ -60,6 +66,7 @@ export type KoreanLawMcpResult =
 
 export interface KoreanLawMcpAdapter {
   tools(): readonly KoreanLawToolName[];
+  discover(): Promise<readonly KoreanLawToolName[]>;
   execute(tool: string, arguments_: Record<string, unknown>): Promise<KoreanLawMcpResult>;
   close(): Promise<void>;
 }
@@ -86,6 +93,7 @@ function defaultClientFactory(): KoreanLawMcpClient {
 
   return {
     connect: (transport) => client.connect(transport as Transport),
+    listTools: () => client.listTools(),
     callTool: (request) => client.callTool(request),
     close: () => client.close(),
   };
@@ -95,8 +103,43 @@ function defaultTransportFactory(options: KoreanLawMcpLaunchOptions): Transport 
   return new StdioClientTransport(options);
 }
 
-function safeErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== "") return error.message;
+function koreanLawMcpEntrypoint(): string {
+  const resourcesPath = process.resourcesPath;
+  if (typeof resourcesPath === "string" && resourcesPath.length > 0) {
+    const packaged = join(
+      resourcesPath,
+      "app.asar.unpacked",
+      "node_modules",
+      "korean-law-mcp",
+      "build",
+      "index.js",
+    );
+    if (existsSync(packaged)) return packaged;
+  }
+  return fileURLToPath(import.meta.resolve("korean-law-mcp"));
+}
+
+function executable(): Readonly<{ command: string; electronRunAsNode?: "1" }> {
+  return process.versions.electron === undefined
+    ? { command: "node" }
+    : { command: process.execPath, electronRunAsNode: "1" };
+}
+
+function discoveredToolNames(value: unknown): readonly KoreanLawToolName[] {
+  if (!isObject(value) || !Array.isArray(value.tools)) return [];
+  const names = new Set(
+    value.tools
+      .filter(isObject)
+      .map((tool) => tool.name)
+      .filter((name): name is string => typeof name === "string"),
+  );
+  return ALLOWED_KOREAN_LAW_TOOLS.filter((name) => names.has(name));
+}
+
+function safeErrorMessage(error: unknown, credential: string | undefined): string {
+  if (error instanceof Error && error.message.trim() !== "") {
+    return sanitizeSecret(error.message, credential);
+  }
   return "Korean law MCP tool execution failed";
 }
 
@@ -116,10 +159,17 @@ export function createKoreanLawMcpAdapter(
     if (connection !== undefined) return connection;
 
     client = clientFactory();
+    const host = executable();
     const launchOptions: KoreanLawMcpLaunchOptions = {
-      command: "korean-law-mcp",
-      args: [],
-      env: { ...getDefaultEnvironment(), LAW_OC: credential as string },
+      command: host.command,
+      args: [koreanLawMcpEntrypoint()],
+      env: {
+        ...getDefaultEnvironment(),
+        LAW_OC: credential as string,
+        ...(host.electronRunAsNode === undefined
+          ? {}
+          : { ELECTRON_RUN_AS_NODE: host.electronRunAsNode }),
+      },
       stderr: "pipe",
     };
     const transport = transportFactory(launchOptions);
@@ -131,6 +181,16 @@ export function createKoreanLawMcpAdapter(
 
   return {
     tools: () => ALLOWED_KOREAN_LAW_TOOLS,
+
+    async discover() {
+      if (credential === undefined || credential === "") return [];
+      try {
+        await connect();
+        return discoveredToolNames(await (client as KoreanLawMcpClient).listTools());
+      } catch {
+        return [];
+      }
+    },
 
     async execute(tool, arguments_) {
       if (!ALLOWED_TOOL_NAMES.has(tool)) {
@@ -173,7 +233,7 @@ export function createKoreanLawMcpAdapter(
           error: {
             code: "execution_failed",
             tool: toolName,
-            message: safeErrorMessage(error),
+            message: safeErrorMessage(error, credential),
           },
         };
       }

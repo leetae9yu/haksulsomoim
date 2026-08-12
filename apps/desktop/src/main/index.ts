@@ -1,3 +1,3 @@
-import { app } from "electron";
+import { bootstrapDesktop, reportBootstrapFailure } from "./bootstrap";
 
-await app.whenReady();
+void bootstrapDesktop().catch(reportBootstrapFailure);

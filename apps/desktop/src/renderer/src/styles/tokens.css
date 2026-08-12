@@ -1,0 +1,110 @@
+:root {
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+
+  --font-sans: "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+  --font-display: "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+
+  --color-ink: #172033;
+  --color-ink-soft: #3e4656;
+  --color-muted: #6e7380;
+  --color-faint: #9297a2;
+  --color-canvas: #f2f3f6;
+  --color-canvas-warm: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f8f9fb;
+  --color-surface-blue: #eef6ff;
+  --color-surface-green: #f1faf5;
+  --color-surface-amber: #fff6ed;
+  --color-border: #dcdfe5;
+  --color-border-strong: #b9bec8;
+  --color-primary: #0066cc;
+  --color-primary-strong: #004f9e;
+  --color-primary-bright: #1682e8;
+  --color-primary-ring: rgb(0 102 204 / 16%);
+  --color-success: #236445;
+  --color-success-border: #c8ded2;
+  --color-warning: #a9510b;
+  --color-warning-border: #f1c99f;
+  --color-danger: #b42318;
+  --color-danger-soft: #fff1f0;
+  --color-criminal: #6446a6;
+  --color-criminal-soft: #f1edfb;
+  --color-dark: #172033;
+  --color-dark-raised: #202b40;
+  --color-dark-border: #364258;
+  --color-on-dark: #f8fafc;
+  --color-on-dark-muted: #bbc5d5;
+  --color-atmosphere-blue: rgb(0 102 204 / 9%);
+  --color-atmosphere-warm: rgb(213 153 77 / 9%);
+  --color-scrim: rgb(23 32 51 / 8%);
+  --background-atmosphere:
+    radial-gradient(circle at 80% 4%, var(--color-atmosphere-blue), transparent 28%),
+    radial-gradient(circle at 24% 70%, var(--color-atmosphere-warm), transparent 32%);
+  --mix-chrome: 94%;
+  --mix-rail: 92%;
+  --mix-accent-border: 22%;
+  --opacity-disabled: 0.46;
+  --opacity-busy: 0.68;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --space-9: 2.5rem;
+  --space-10: 3rem;
+  --space-12: 4rem;
+  --space-14: 4.5rem;
+  --space-16: 5rem;
+  --space-20: 7.5rem;
+
+  --text-micro: 0.6875rem;
+  --text-caption: 0.75rem;
+  --text-small: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-lead: 1.125rem;
+  --text-title: 1.5rem;
+  --text-card-title: 1.3125rem;
+  --text-hero: clamp(2.75rem, 5vw, 4.125rem);
+  --leading-tight: 1.04;
+  --leading-title: 1.2;
+  --leading-body: 1.6;
+  --tracking-display: -0.052em;
+  --tracking-title: -0.032em;
+  --tracking-label: 0.12em;
+  --weight-semibold: 700;
+  --weight-bold: 800;
+  --weight-black: 850;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 999rem;
+  --border-thin: 0.0625rem;
+  --border-emphasis: 0.25rem;
+  --shadow-card: 0 0.75rem 2rem var(--color-scrim);
+  --shadow-focus: 0 0 0 var(--space-1) var(--color-primary-ring);
+
+  --control-height: 3rem;
+  --control-height-small: 2.625rem;
+  --upload-height: 8.25rem;
+  --topbar-height: 4rem;
+  --rail-width: 15rem;
+  --layout-min-width: 60rem;
+  --layout-min-height: 40rem;
+  --workspace-max: 65rem;
+  --workspace-gutter: 5rem;
+  --copy-max: 40rem;
+  --content-scroll-max: 10rem;
+
+  --duration-fast: 160ms;
+  --duration-enter: 320ms;
+  --easing-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
