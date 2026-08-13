@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pruneDependencyMetadata } from "./package-windows-prune.ts";
-import { assertReleaseSurface } from "./package-windows-surface.ts";
+import { assertReleaseSurface, isForbiddenReleasePath } from "./package-windows-surface.ts";
 
 function write(root: string, path: string, contents = "export {};"): void {
   const absolute = join(root, path);
@@ -144,6 +144,38 @@ describe("F4 dependency-specific package closure", () => {
       expect(entry).not.toContain('args[0] === "setup"');
       expect(existsSync(join(modules, "korean-law-mcp/build/server"))).toBe(false);
       expect(existsSync(join(modules, "korean-law-mcp/build/setup.js"))).toBe(false);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test.each([
+    "node_modules/dotenv/README-es.md",
+    "node_modules/dotenv/README_zh-CN.md",
+    "node_modules/dotenv/README.pt-BR.md",
+    "node_modules/dotenv/README",
+    "node_modules/dotenv/docs/README.md",
+  ])("rejects each forbidden documentation path independently: %s", (path) => {
+    const root = mkdtempSync(join(tmpdir(), "haksul-f4-singleton-"));
+    try {
+      write(root, path);
+      expect(isForbiddenReleasePath(path)).toBe(true);
+      expect(() => assertReleaseSurface(root, [path])).toThrow("Forbidden release paths");
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test.each([
+    "node_modules/dotenv/LICENSE",
+    "node_modules/debug/runtime/index.js",
+    "node_modules/tesseract.js/runtime/index.js",
+  ])("allows each legal/runtime path independently: %s", (path) => {
+    const root = mkdtempSync(join(tmpdir(), "haksul-f4-allowed-"));
+    try {
+      write(root, path);
+      expect(isForbiddenReleasePath(path)).toBe(false);
+      expect(() => assertReleaseSurface(root, [path])).not.toThrow();
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

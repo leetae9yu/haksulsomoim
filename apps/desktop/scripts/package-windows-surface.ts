@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const forbiddenPath =
-  /(?:^|\/)(?:readme(?:\.[^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$/iu;
+  /(?:^|\/)(?:readme(?:[-_.][^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$/iu;
 const forbiddenTopLevelDocumentation =
   /(?:\/node_modules\/(?:@[^/]+\/)?[^/]+\/)(?:readme|changelog|change[-_]log|history|contributing|security)(?:\.[^/]*)?$/iu;
 const forbiddenTargetedSurface =
