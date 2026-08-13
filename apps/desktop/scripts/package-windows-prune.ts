@@ -207,10 +207,16 @@ function owningPackage(root: string, path: string): string {
   return segments[0]?.startsWith("@") ? segments.slice(0, 2).join("/") : (segments[0] ?? "");
 }
 
+const topLevelDocumentation =
+  /^(?:readme|changelog|change[-_]?log|history|contributing|security)(?:\.[^/]+)?$/iu;
+
 function visitManifests(root: string, directory = root): void {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const absolute = join(directory, entry.name);
-    if (entry.isDirectory()) visitManifests(root, absolute);
+    const isPackageRoot = existsSync(join(directory, "package.json"));
+    if (entry.isFile() && isPackageRoot && topLevelDocumentation.test(entry.name)) {
+      rmSync(absolute, { force: true });
+    } else if (entry.isDirectory()) visitManifests(root, absolute);
     else if (entry.name === "package.json") {
       const packagePath = relative(root, dirname(absolute)).replaceAll("\\", "/");
       trimManifest(absolute, relocatedRuntime[packagePath] ?? {});

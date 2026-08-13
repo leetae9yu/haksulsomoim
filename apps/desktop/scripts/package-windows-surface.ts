@@ -2,7 +2,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const forbiddenPath =
-  /(?:^|\/)(?:readme(?:\.[^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$|(?:^|\/)(?:readme|changelog|history|contributing|security|license|notice|third[_-]?party)(?:\.[^/]*)?$/iu;
+  /(?:^|\/)(?:readme(?:\.[^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$/iu;
+const forbiddenTopLevelDocumentation =
+  /(?:\/node_modules\/(?:@[^/]+\/)?[^/]+\/)(?:readme|changelog|change[-_]log|history|contributing|security)(?:\.[^/]*)?$/iu;
 const forbiddenTargetedSurface =
   /(?:^|\/)korean-law-mcp\/build\/(?:setup\.js|server\/)|(?:^|\/)@kordoc\/core\/dist\/(?:commands\/|mcp\/server\.js$)|(?:^|\/)openai\/(?:bin\/cli|client\/websocket|internal\/qs|server\/(?:http|sse))/iu;
 const forbiddenGeneral =
@@ -17,7 +19,10 @@ const forbiddenManifestFields = ["bin", "scripts", "devDependencies"] as const;
 
 export function isForbiddenReleasePath(path: string): boolean {
   return (
-    forbiddenPath.test(path) || forbiddenTargetedSurface.test(path) || forbiddenGeneral.test(path)
+    forbiddenPath.test(path) ||
+    forbiddenTopLevelDocumentation.test(path) ||
+    forbiddenTargetedSurface.test(path) ||
+    forbiddenGeneral.test(path)
   );
 }
 
