@@ -4,7 +4,6 @@ import {
   mkdir,
   mkdtemp,
   readdir,
-  readFile,
   readlink,
   rename,
   rm,
@@ -13,9 +12,9 @@ import {
   unlink,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { AgentRunRepository } from "./agent-run-repository";
-import { agentRepositoryKeyPublicationPaths } from "./agent-run-repository-key-path";
+import { agentRepositoryKeyMarkerPath } from "./agent-run-repository-key-path";
 
 const MARKER = ".agent-repository-key";
 const roots: string[] = [];
@@ -66,9 +65,7 @@ describe("Agent repository canonical key-marker paths", () => {
     const fixture = await crossDeviceFixture();
     if (fixture === undefined) {
       const canonical = "/mock-device/target/repository";
-      const paths = agentRepositoryKeyPublicationPaths(canonical, "mock-token");
-      expect(paths.marker).toBe(`${canonical}/${MARKER}`);
-      expect(dirname(paths.temporary)).toBe(dirname(canonical));
+      expect(agentRepositoryKeyMarkerPath(canonical)).toBe(`${canonical}/${MARKER}`);
       return;
     }
     console.info(
@@ -156,6 +153,6 @@ describe("Agent repository canonical key-marker paths", () => {
       code: "AGENT_REPOSITORY_KEY_MARKER_INVALID",
     });
     expect(await readlink(markerLink)).toBe(before);
-    expect(await readFile(join(donor, MARKER), "utf8")).not.toBe("");
+    expect(await readdir(join(donor, MARKER))).toHaveLength(1);
   });
 });

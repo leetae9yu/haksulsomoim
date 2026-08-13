@@ -7,6 +7,7 @@
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
         "@openai/codex": "0.147.0",
+        "@openclaw/fs-safe": "0.5.5",
         "@tesseract.js-data/eng": "1.0.0",
         "@tesseract.js-data/kor": "1.0.0",
         "korean-law-mcp": "4.9.6",
@@ -286,6 +287,8 @@
     "@openai/codex-win32-arm64": ["@openai/codex@0.147.0-win32-arm64", "", { "os": "win32", "cpu": "arm64" }, "sha512-e2ZstJ8zT8Rm1nvR7CUVO+Gr3cTChE41+VfOzGhynzDXEoW0wfbjUQbc2bWbh1arG94LMm4y3dqBtUIbSrfeGA=="],
 
     "@openai/codex-win32-x64": ["@openai/codex@0.147.0-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-oT7Ss5fAPf2fiWE9QNURqZcQGAAawSVxmIUdgPzckq4KFZAM+pRz9JbM4Rr498CjtbNgTOjWvDJ+DXvIBSfOPA=="],
+
+    "@openclaw/fs-safe": ["@openclaw/fs-safe@0.5.5", "", { "optionalDependencies": { "jszip": "^3.10.1", "tar": "7.5.22" } }, "sha512-x8wYigrOwmnsE8v4LfAh2eTvvkuDMspBrQeBp/GyB9/c7eFf8aL7gK4keewDbhscKX1pACD8Yd+ehZq6o29xHw=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.143.0", "", {}, "sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA=="],
 

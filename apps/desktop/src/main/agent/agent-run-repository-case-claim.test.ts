@@ -38,7 +38,7 @@ describe("encrypted Agent case claim", () => {
         .filter((name) => name !== ".agent-repository-key")
         .every((name) => /^[a-f0-9]{64}\.(?:json|claim)$/u.test(name)),
     ).toBe(true);
-    for (const name of names) {
+    for (const name of names.filter((name) => name !== ".agent-repository-key")) {
       const bytes = await readFile(join(root, name), "utf8");
       expect(bytes).not.toContain("private-case");
       expect(bytes).not.toContain("private-owner");

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -52,6 +52,17 @@ async function childOpen(directory: string, keyByte: number): Promise<ChildRecei
   return childReceiptSchema.parse(JSON.parse(stdout));
 }
 
+async function markerSnapshot(marker: string): Promise<string> {
+  const entries = (await readdir(marker)).sort();
+  const facts = await Promise.all(
+    entries.map(async (entry) => {
+      const metadata = await stat(join(marker, entry));
+      return { entry, mode: metadata.mode, nlink: metadata.nlink, size: metadata.size };
+    }),
+  );
+  return JSON.stringify(facts);
+}
+
 afterEach(async () => {
   await Promise.all(
     roots.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
@@ -59,7 +70,7 @@ afterEach(async () => {
 });
 
 describe("Agent repository key marker", () => {
-  test("creates one fixed mode-0600 marker shared by same-key instances", async () => {
+  test("creates one fixed private marker directory shared by same-key instances", async () => {
     const directory = await root();
     const left = new AgentRunRepository({ directory, encryptionKey: key });
     const right = new AgentRunRepository({ directory, encryptionKey: key });
@@ -68,10 +79,12 @@ describe("Agent repository key marker", () => {
       await Promise.all([left.activeRunId("case-left"), right.activeRunId("case-right")]),
     ).toEqual([undefined, undefined]);
     expect(await readdir(directory)).toEqual([MARKER]);
-    expect((await stat(join(directory, MARKER))).mode & 0o777).toBe(0o600);
-    const marker = await readFile(join(directory, MARKER), "utf8");
-    expect(marker).not.toContain("case-left");
-    expect(marker).not.toContain("case-right");
+    expect((await stat(join(directory, MARKER))).mode & 0o777).toBe(0o700);
+    const [entry] = await readdir(join(directory, MARKER));
+    if (entry === undefined) throw new Error("expected verifier entry");
+    expect(entry).toMatch(/^verifier-[a-f0-9]{64}$/u);
+    expect((await stat(join(directory, MARKER, entry))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(directory, MARKER, entry))).size).toBe(0);
   });
 
   test("allows exactly one key to initialize a same-process first-open race", async () => {
@@ -115,33 +128,34 @@ describe("Agent repository key marker", () => {
     expect(await readdir(parent)).toEqual(["repository"]);
   });
 
-  for (const corruption of [
-    { name: "truncated", payload: "{", code: "AGENT_REPOSITORY_KEY_MARKER_INVALID" },
-    {
-      name: "malformed",
-      payload: JSON.stringify({ version: 1 }),
-      code: "AGENT_REPOSITORY_KEY_MARKER_INVALID",
-    },
-    {
-      name: "tampered",
-      payload: JSON.stringify({ version: 1, verifier: "0".repeat(64) }),
-      code: "AGENT_REPOSITORY_KEY_MISMATCH",
-    },
-  ]) {
-    test(`rejects a ${corruption.name} marker without overwriting it`, async () => {
+  for (const corruption of ["truncated", "malformed", "tampered"] as const) {
+    test(`rejects a ${corruption} marker without changing it`, async () => {
       const directory = await root();
+      const marker = join(directory, MARKER);
       const repository = new AgentRunRepository({ directory, encryptionKey: key });
       await repository.activeRunId("marker-case");
-      await writeFile(join(directory, MARKER), corruption.payload, "utf8");
+      const [entry] = await readdir(marker);
+      if (entry === undefined) throw new Error("expected verifier entry");
+      if (corruption === "truncated") {
+        await writeFile(join(marker, entry), "x", "utf8");
+      } else if (corruption === "malformed") {
+        await writeFile(join(marker, "legacy-marker.json"), "legacy", { mode: 0o600 });
+      } else {
+        await rename(join(marker, entry), join(marker, `verifier-${"0".repeat(64)}`));
+      }
+      const before = await markerSnapshot(marker);
 
       await expect(repository.activeRunId("marker-case")).rejects.toMatchObject({
-        code: corruption.code,
+        code:
+          corruption === "tampered"
+            ? "AGENT_REPOSITORY_KEY_MISMATCH"
+            : "AGENT_REPOSITORY_KEY_MARKER_INVALID",
       });
-      expect(await readFile(join(directory, MARKER), "utf8")).toBe(corruption.payload);
+      expect(await markerSnapshot(marker)).toBe(before);
     });
   }
 
-  test("does not initialize a missing marker over a nonempty repository", async () => {
+  test("does not initialize a markerless legacy repository", async () => {
     const directory = await root();
     await writeFile(join(directory, "existing-record.json"), "opaque", { mode: 0o600 });
     await chmod(directory, 0o700);

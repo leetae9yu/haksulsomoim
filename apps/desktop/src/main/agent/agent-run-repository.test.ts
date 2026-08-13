@@ -61,7 +61,7 @@ describe("encrypted Agent run repository", () => {
         .filter((name) => name !== ".agent-repository-key")
         .every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name)),
     ).toBe(true);
-    for (const name of names) {
+    for (const name of names.filter((name) => name !== ".agent-repository-key")) {
       const path = join(root, name);
       const bytes = await readFile(path, "utf8");
       for (const sentinel of [

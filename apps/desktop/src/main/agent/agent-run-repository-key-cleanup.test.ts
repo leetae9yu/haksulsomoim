@@ -1,99 +1,38 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { lstat, mkdtemp, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readdir, rename, rm, stat } from "node:fs/promises";
 import {
-  type AgentRepositoryKeyCleanupCheckpoint,
-  type AgentRepositoryTemporaryIdentity,
-  cleanupAgentRepositoryKeyTemporary,
+  agentRepositoryKeyVerifierEntry,
+  publishAgentRepositoryKeyMarker,
 } from "./agent-run-repository-key-cleanup";
+import {
+  artifactFingerprint,
+  createPublicationArtifact,
+  publicationFixture,
+} from "./agent-run-repository-key-publication.fixtures";
 
 const roots: string[] = [];
 
-type Barrier = Readonly<{
-  reached: Promise<void>;
-  release: () => void;
-  wait: () => Promise<void>;
-}>;
+async function postProofSwapRound(round: number): Promise<void> {
+  const current = await publicationFixture(`round-${round}`);
+  roots.push(current.root);
+  const attacker = await createPublicationArtifact(
+    "file",
+    current.staged,
+    current.root,
+    `round-${round}`,
+  );
 
-function barrier(): Barrier {
-  let markReached = (): void => undefined;
-  let release = (): void => undefined;
-  const reached = new Promise<void>((resolve) => {
-    markReached = resolve;
-  });
-  const continuation = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return {
-    reached,
-    release,
-    wait: async () => {
-      markReached();
-      await continuation;
-    },
-  };
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && error.code === code;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if (isNodeError(error, "ENOENT")) return false;
-    throw error;
-  }
-}
-
-async function ownedTemporary(
-  path: string,
-  payload: string,
-): Promise<AgentRepositoryTemporaryIdentity> {
-  const file = await open(path, "wx", 0o600);
-  try {
-    await file.writeFile(payload, "utf8");
-    const metadata = await file.stat();
-    return { dev: metadata.dev, ino: metadata.ino };
-  } finally {
-    await file.close();
-  }
-}
-
-async function swapAtCapturedEntry(round: number): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), `haksul-cleanup-toctou-${round}-`));
-  roots.push(parent);
-  const source = join(parent, "owned.tmp");
-  const movedOwned = join(parent, "owned-moved.tmp");
-  const stagedAttacker = join(parent, "attacker-staged.tmp");
-  const identity = await ownedTemporary(source, `owned-${round}`);
-  await writeFile(stagedAttacker, `attacker-${round}`, { mode: 0o600 });
-  const gate = barrier();
-  const cleanup = cleanupAgentRepositoryKeyTemporary(source, identity, {
-    checkpoint: async (checkpoint: AgentRepositoryKeyCleanupCheckpoint) => {
-      if (checkpoint.phase === "after-entry-captured") await gate.wait();
+  const result = await publishAgentRepositoryKeyMarker(current.marker, current.verifier, {
+    checkpoint: async (checkpoint) => {
+      if (checkpoint.phase !== "after-source-proof") return;
+      await rename(current.marker, current.moved);
+      await rename(current.staged, current.marker);
     },
   });
 
-  await gate.reached;
-  try {
-    try {
-      await rename(source, movedOwned);
-    } catch (error) {
-      if (!isNodeError(error, "ENOENT")) throw error;
-    }
-    await rename(stagedAttacker, source);
-  } finally {
-    gate.release();
-  }
-  await cleanup;
-
-  expect(await readFile(source, "utf8")).toBe(`attacker-${round}`);
-  expect(await exists(movedOwned)).toBe(false);
-  expect(await readdir(parent)).toEqual(["owned.tmp"]);
+  expect(result).toBe("published");
+  expect(await artifactFingerprint(current.marker)).toEqual(attacker);
+  expect(await readdir(current.moved)).toEqual([agentRepositoryKeyVerifierEntry(current.verifier)]);
 }
 
 afterEach(async () => {
@@ -102,12 +41,27 @@ afterEach(async () => {
   );
 });
 
-describe("Agent repository key temporary cleanup", () => {
-  test("does not delete a replacement swapped after entry identity observation", async () => {
-    await swapAtCapturedEntry(0);
-  }, 10_000);
+describe("Agent repository key marker source lifecycle", () => {
+  test("preserves an attacker swapped after exact source identity proof", async () => {
+    await postProofSwapRound(0);
+  });
 
-  test("binds cleanup to the owned inode across 64 deterministic barrier rounds", async () => {
-    for (let round = 1; round <= 64; round += 1) await swapAtCapturedEntry(round);
+  test("binds publication to the proved directory handle across 64 rounds", async () => {
+    for (let round = 1; round <= 64; round += 1) await postProofSwapRound(round);
   }, 30_000);
+
+  test("leaves no owned staging or cleanup residue after normal publication", async () => {
+    const current = await publicationFixture("normal-zero-residue");
+    roots.push(current.root);
+
+    expect(await publishAgentRepositoryKeyMarker(current.marker, current.verifier)).toBe(
+      "published",
+    );
+
+    const entry = agentRepositoryKeyVerifierEntry(current.verifier);
+    expect(await readdir(current.root)).toEqual([".agent-repository-key"]);
+    expect(await readdir(current.marker)).toEqual([entry]);
+    expect((await stat(current.marker)).mode & 0o777).toBe(0o700);
+    expect((await stat(`${current.marker}/${entry}`)).mode & 0o777).toBe(0o600);
+  });
 });

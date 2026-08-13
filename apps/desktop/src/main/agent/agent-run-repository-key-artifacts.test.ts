@@ -105,7 +105,7 @@ describe("Agent repository key marker attacker artifacts", () => {
     });
   }
 
-  test("removes only its owned publication temp and preserves sibling artifacts", async () => {
+  test("creates no publication temp and preserves sibling artifacts", async () => {
     const parent = await root();
     const directory = join(parent, "repository");
     await mkdir(directory, { mode: 0o700 });

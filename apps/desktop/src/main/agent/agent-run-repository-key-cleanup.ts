@@ -1,217 +1,183 @@
-import { randomBytes } from "node:crypto";
-import { constants } from "node:fs";
-import { link, lstat, mkdir, open, rmdir, unlink } from "node:fs/promises";
+import { closeSync, constants, fchmodSync, fstatSync, fsyncSync } from "node:fs";
+import { lstat, mkdir, open } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
-const QUARANTINE_PREFIX = ".haksulsomoim-agent-repository-cleanup.";
-const QUARANTINE_ENTRY = "entry";
-const QUARANTINE_SOURCE_PROOF = "source-proof";
-const MAX_QUARANTINE_ATTEMPTS = 8;
-const TOKEN_PATTERN = /^[a-f0-9]{32}$/u;
+const VERIFIER_PREFIX = "verifier-";
+const VERIFIER_PATTERN = /^[a-f0-9]{64}$/u;
+const require = createRequire(import.meta.url);
 
-export type AgentRepositoryTemporaryIdentity = Readonly<{ dev: number; ino: number }>;
-
-export type AgentRepositoryKeyCleanupCheckpoint = Readonly<{
-  phase:
-    | "before-entry-capture"
-    | "before-no-replace-capture"
-    | "before-source-release"
-    | "after-entry-captured";
+export type AgentRepositoryKeyPublicationCheckpoint = Readonly<{
+  phase: "before-source-capture" | "after-source-proof" | "after-verifier-captured";
   sourcePath: string;
-  quarantinePath: string;
+  verifierPath: string;
 }>;
 
-export type AgentRepositoryKeyCleanupControl = Readonly<{
-  checkpoint?: (checkpoint: AgentRepositoryKeyCleanupCheckpoint) => Promise<void>;
-  token?: () => string;
+export type AgentRepositoryKeyPublicationControl = Readonly<{
+  checkpoint?: (checkpoint: AgentRepositoryKeyPublicationCheckpoint) => Promise<void>;
 }>;
 
-type Quarantine = Readonly<{ directory: string; entry: string; sourceProof: string }>;
-
-type AgentRepositoryKeyCleanupPlatform = Readonly<{
-  captureNoReplace(sourcePath: string, destinationPath: string): Promise<void>;
+type NativeOpenResult = Readonly<{ fd: number }>;
+type NativeBinding = Readonly<{
+  openBeneath(rootFd: number, relativePath: string, flags: number): NativeOpenResult;
 }>;
 
-const hardLinkCleanupPlatform: AgentRepositoryKeyCleanupPlatform = {
-  captureNoReplace: link,
-};
+let loadedNativeBinding: NativeBinding | undefined;
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-export class AgentRepositoryKeyCleanupError extends Error {
-  readonly code = "AGENT_REPOSITORY_KEY_MARKER_CLEANUP_FAILED";
-  readonly quarantinePath: string | undefined;
+function isNativeBinding(value: unknown): value is NativeBinding {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "openBeneath" in value &&
+    typeof value.openBeneath === "function"
+  );
+}
 
-  constructor(message: string, quarantinePath?: string, options?: ErrorOptions) {
+function nativeBinding(): NativeBinding {
+  if (loadedNativeBinding !== undefined) return loadedNativeBinding;
+  const packageRoot = dirname(require.resolve("@openclaw/fs-safe/package.json"));
+  const loader: unknown = require(join(packageRoot, "dist/native.js"));
+  if (
+    typeof loader !== "object" ||
+    loader === null ||
+    !("requireNativeBinding" in loader) ||
+    typeof loader.requireNativeBinding !== "function"
+  ) {
+    throw new Error("Agent repository native filesystem helper is invalid");
+  }
+  const binding: unknown = loader.requireNativeBinding();
+  if (!isNativeBinding(binding)) {
+    throw new Error("Agent repository native filesystem binding is invalid");
+  }
+  loadedNativeBinding = binding;
+  return binding;
+}
+
+function syncBestEffort(fd: number): void {
+  try {
+    fsyncSync(fd);
+  } catch (error) {
+    if (!isNodeError(error, "EPERM")) throw error;
+  }
+}
+
+export class AgentRepositoryKeyPublicationError extends Error {
+  readonly code = "AGENT_REPOSITORY_KEY_MARKER_PUBLICATION_FAILED";
+  readonly markerPath: string;
+
+  constructor(message: string, markerPath: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "AgentRepositoryKeyCleanupError";
-    this.quarantinePath = quarantinePath;
+    this.name = "AgentRepositoryKeyPublicationError";
+    this.markerPath = markerPath;
   }
 }
 
-function cleanupError(
-  message: string,
-  quarantinePath: string,
-  cause?: unknown,
-): AgentRepositoryKeyCleanupError {
-  const options = cause === undefined ? undefined : { cause };
-  return new AgentRepositoryKeyCleanupError(message, quarantinePath, options);
-}
-
-async function createQuarantine(
-  sourcePath: string,
-  control: AgentRepositoryKeyCleanupControl,
-): Promise<Quarantine> {
-  const parent = dirname(sourcePath);
-  for (let attempt = 0; attempt < MAX_QUARANTINE_ATTEMPTS; attempt += 1) {
-    const token = control.token?.() ?? randomBytes(16).toString("hex");
-    if (!TOKEN_PATTERN.test(token)) {
-      throw new AgentRepositoryKeyCleanupError("Agent repository cleanup token is invalid");
-    }
-    const directory = join(parent, `${QUARANTINE_PREFIX}${token}`);
-    try {
-      await mkdir(directory, { mode: 0o700 });
-      return {
-        directory,
-        entry: join(directory, QUARANTINE_ENTRY),
-        sourceProof: join(directory, QUARANTINE_SOURCE_PROOF),
-      };
-    } catch (error) {
-      if (isNodeError(error, "EEXIST")) continue;
-      throw cleanupError("Agent repository cleanup quarantine creation failed", directory, error);
-    }
+export function agentRepositoryKeyVerifierEntry(verifier: string): string {
+  if (!VERIFIER_PATTERN.test(verifier)) {
+    throw new AgentRepositoryKeyPublicationError("Agent repository key verifier is invalid", "");
   }
-  throw new AgentRepositoryKeyCleanupError("Agent repository cleanup quarantine allocation failed");
+  return `${VERIFIER_PREFIX}${verifier}`;
 }
 
-async function captureEntryNoReplace(
-  sourcePath: string,
-  quarantine: Quarantine,
-  control: AgentRepositoryKeyCleanupControl,
-): Promise<void> {
+export function parseAgentRepositoryKeyVerifierEntry(entry: string): string | undefined {
+  if (!entry.startsWith(VERIFIER_PREFIX)) return undefined;
+  const verifier = entry.slice(VERIFIER_PREFIX.length);
+  return VERIFIER_PATTERN.test(verifier) ? verifier : undefined;
+}
+
+export async function publishAgentRepositoryKeyMarker(
+  markerPath: string,
+  verifier: string,
+  control: AgentRepositoryKeyPublicationControl = {},
+): Promise<"contended" | "published"> {
+  const verifierPath = join(markerPath, agentRepositoryKeyVerifierEntry(verifier));
   await control.checkpoint?.({
-    phase: "before-entry-capture",
-    sourcePath,
-    quarantinePath: quarantine.entry,
-  });
-  await control.checkpoint?.({
-    phase: "before-no-replace-capture",
-    sourcePath,
-    quarantinePath: quarantine.entry,
+    phase: "before-source-capture",
+    sourcePath: markerPath,
+    verifierPath,
   });
   try {
-    await hardLinkCleanupPlatform.captureNoReplace(sourcePath, quarantine.entry);
+    await mkdir(markerPath, { mode: 0o700 });
   } catch (error) {
-    throw cleanupError(
-      "Agent repository temporary no-replace capture failed",
-      quarantine.entry,
-      error,
+    if (isNodeError(error, "EEXIST")) return "contended";
+    throw new AgentRepositoryKeyPublicationError(
+      "Agent repository key marker capture failed",
+      markerPath,
+      { cause: error },
     );
   }
-}
 
-function matchesOwnedFile(
-  metadata: Awaited<ReturnType<typeof lstat>>,
-  identity: AgentRepositoryTemporaryIdentity,
-): boolean {
-  return metadata.isFile() && metadata.dev === identity.dev && metadata.ino === identity.ino;
-}
-
-async function openOwnedEntry(
-  path: string,
-  reportedPath: string,
-  identity: AgentRepositoryTemporaryIdentity,
-): Promise<Awaited<ReturnType<typeof open>>> {
-  let file: Awaited<ReturnType<typeof open>>;
+  let directory: Awaited<ReturnType<typeof open>>;
   try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    directory = await open(
+      markerPath,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
   } catch (error) {
-    throw cleanupError(
-      "Agent repository quarantined entry is not a safe file",
-      reportedPath,
-      error,
+    throw new AgentRepositoryKeyPublicationError(
+      "Agent repository key marker source is not a safe directory",
+      markerPath,
+      { cause: error },
     );
   }
   try {
-    const [opened, linked] = await Promise.all([file.stat(), lstat(path)]);
-    if (!matchesOwnedFile(opened, identity) || !matchesOwnedFile(linked, identity)) {
-      throw cleanupError("Agent repository quarantined entry is not owned", reportedPath);
-    }
-    return file;
-  } catch (error) {
-    await file.close();
-    if (error instanceof AgentRepositoryKeyCleanupError) throw error;
-    throw cleanupError("Agent repository quarantined identity check failed", reportedPath, error);
-  }
-}
-
-async function removeCapturedOwnedEntry(
-  sourcePath: string,
-  quarantine: Quarantine,
-  identity: AgentRepositoryTemporaryIdentity,
-  control: AgentRepositoryKeyCleanupControl,
-): Promise<void> {
-  const captured = await openOwnedEntry(quarantine.entry, quarantine.entry, identity);
-  let sourceProof: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    await control.checkpoint?.({
-      phase: "before-source-release",
-      sourcePath,
-      quarantinePath: quarantine.entry,
-    });
-    try {
-      await hardLinkCleanupPlatform.captureNoReplace(sourcePath, quarantine.sourceProof);
-    } catch (error) {
-      throw cleanupError("Agent repository source identity proof failed", quarantine.entry, error);
-    }
-    sourceProof = await openOwnedEntry(quarantine.sourceProof, quarantine.entry, identity);
-    await unlink(sourcePath);
-    await unlink(quarantine.sourceProof);
-    await sourceProof.close();
-    sourceProof = undefined;
-    await control.checkpoint?.({
-      phase: "after-entry-captured",
-      sourcePath,
-      quarantinePath: quarantine.entry,
-    });
-    const linked = await lstat(quarantine.entry);
-    if (!matchesOwnedFile(linked, identity)) {
-      throw cleanupError(
-        "Agent repository quarantined temporary identity changed",
-        quarantine.entry,
+    const [opened, linked] = await Promise.all([directory.stat(), lstat(markerPath)]);
+    if (
+      !opened.isDirectory() ||
+      !linked.isDirectory() ||
+      linked.isSymbolicLink() ||
+      opened.dev !== linked.dev ||
+      opened.ino !== linked.ino
+    ) {
+      throw new AgentRepositoryKeyPublicationError(
+        "Agent repository key marker source identity changed",
+        markerPath,
       );
     }
-    await unlink(quarantine.entry);
+    await control.checkpoint?.({
+      phase: "after-source-proof",
+      sourcePath: markerPath,
+      verifierPath,
+    });
+
+    let verifierFd: number | undefined;
+    try {
+      verifierFd = nativeBinding().openBeneath(
+        directory.fd,
+        agentRepositoryKeyVerifierEntry(verifier),
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      ).fd;
+      fchmodSync(verifierFd, 0o600);
+      const metadata = fstatSync(verifierFd);
+      if (!metadata.isFile() || metadata.size !== 0) {
+        throw new AgentRepositoryKeyPublicationError(
+          "Agent repository key verifier capture is invalid",
+          markerPath,
+        );
+      }
+      syncBestEffort(verifierFd);
+      await control.checkpoint?.({
+        phase: "after-verifier-captured",
+        sourcePath: markerPath,
+        verifierPath,
+      });
+    } finally {
+      if (verifierFd !== undefined) closeSync(verifierFd);
+    }
+    syncBestEffort(directory.fd);
+    return "published";
   } catch (error) {
-    if (error instanceof AgentRepositoryKeyCleanupError) throw error;
-    throw cleanupError(
-      "Agent repository quarantined temporary removal failed",
-      quarantine.entry,
-      error,
+    if (error instanceof AgentRepositoryKeyPublicationError) throw error;
+    throw new AgentRepositoryKeyPublicationError(
+      "Agent repository key verifier publication failed",
+      markerPath,
+      { cause: error },
     );
   } finally {
-    await sourceProof?.close();
-    await captured.close();
+    await directory.close();
   }
-  try {
-    await rmdir(quarantine.directory);
-  } catch (error) {
-    throw cleanupError(
-      "Agent repository cleanup quarantine removal failed",
-      quarantine.entry,
-      error,
-    );
-  }
-}
-
-export async function cleanupAgentRepositoryKeyTemporary(
-  sourcePath: string,
-  identity: AgentRepositoryTemporaryIdentity,
-  control: AgentRepositoryKeyCleanupControl = {},
-): Promise<void> {
-  const quarantine = await createQuarantine(sourcePath, control);
-  await captureEntryNoReplace(sourcePath, quarantine, control);
-  await removeCapturedOwnedEntry(sourcePath, quarantine, identity, control);
 }
