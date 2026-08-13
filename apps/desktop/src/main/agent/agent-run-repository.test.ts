@@ -12,9 +12,21 @@ import {
   toolStarted,
   withSteps,
 } from "./agent-run-repository.fixtures";
+import { EncryptedAgentRunRecordStore } from "./agent-run-repository-record";
 
 const roots: string[] = [];
 const key = new Uint8Array(32).fill(7);
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve = (_value: T): void => undefined;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
 
 async function fixture(): Promise<{
   root: string;
@@ -163,6 +175,72 @@ describe("encrypted Agent run repository", () => {
     await expect(repository.load(unsafe.runId)).rejects.toThrow();
     await writeFile(path, "not encrypted", "utf8");
     await expect(repository.load(unsafe.runId)).rejects.toThrow();
+  });
+
+  test("rejects a tool result whose tool name differs from its committed start", async () => {
+    const { repository } = await fixture();
+    const initial = activeRun("mismatched-tool-run");
+    const started = [decisionStarted(), decisionRecorded(), toolStarted()];
+    const finished = toolFinished();
+    if (finished.kind !== "tool-finished" || finished.result.toolName !== "search-official-law") {
+      throw new Error("fixture mismatch");
+    }
+    const mismatched = {
+      ...finished,
+      result: { ...finished.result, toolName: "inspect-masked-case" as const },
+    };
+    await repository.create(initial);
+    await repository.save({ run: withSteps(initial, started), cursor: 0 });
+
+    await expect(
+      repository.save({ run: withSteps(initial, [...started, mismatched]), cursor: 0 }),
+    ).rejects.toThrow("tool name");
+  });
+
+  test("prevents concurrent conflicting saves from both committing", async () => {
+    const { repository } = await fixture();
+    const initial = activeRun("concurrent-run");
+    await repository.create(initial);
+    const originalWrite = EncryptedAgentRunRecordStore.prototype.write;
+    const bothWritesArrived = deferred<void>();
+    const releaseWrites = deferred<void>();
+    let arrivals = 0;
+    EncryptedAgentRunRecordStore.prototype.write = async function (
+      ...args: Parameters<typeof originalWrite>
+    ): Promise<void> {
+      if (!args[1]) {
+        arrivals += 1;
+        if (arrivals === 2) bothWritesArrived.resolve();
+        await releaseWrites.promise;
+      }
+      return originalWrite.apply(this, args);
+    };
+    const left = withSteps(initial, [decisionStarted("left-step", "left-decision")]);
+    const right = withSteps(initial, [decisionStarted("right-step", "right-decision")]);
+    let settled: PromiseSettledResult<void>[];
+    try {
+      const saves = [
+        repository.save({ run: left, cursor: 0 }),
+        repository.save({ run: right, cursor: 0 }),
+      ];
+      await bothWritesArrived.promise;
+      releaseWrites.resolve();
+      settled = await Promise.allSettled(saves);
+    } finally {
+      releaseWrites.resolve();
+      EncryptedAgentRunRecordStore.prototype.write = originalWrite;
+    }
+
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(settled.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const committed = await repository.load(initial.runId);
+    expect(committed.run.steps).toHaveLength(2);
+    const committedStepId = committed.run.steps[0]?.stepId ?? "";
+    expect(["left-step", "right-step"]).toContain(committedStepId);
+    expect(committed.run.steps[1]).toMatchObject({
+      kind: "interrupted",
+      interruption: { kind: "application-restarted" },
+    });
   });
 
   test("requires result persistence before cursor advance and preserves immutable history", async () => {

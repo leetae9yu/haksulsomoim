@@ -33,6 +33,10 @@ function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
+function same(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export class AgentRunAlreadyExistsError extends Error {
   readonly code = "AGENT_RUN_ALREADY_EXISTS";
 
@@ -51,9 +55,23 @@ export class AgentRunNotFoundError extends Error {
   }
 }
 
+export class ConcurrentAgentRunSaveError extends Error {
+  readonly code = "AGENT_RUN_CONCURRENT_SAVE";
+
+  constructor() {
+    super("Agent run changed before its snapshot could be published");
+    this.name = "ConcurrentAgentRunSaveError";
+  }
+}
+
+/**
+ * Revision checks serialize per locator within this store instance. Electron's single main process owns
+ * one repository instance; this is deliberately not a cross-process filesystem compare-and-swap.
+ */
 export class EncryptedAgentRunRecordStore {
   readonly #directory: string;
   readonly #key: Uint8Array;
+  readonly #publicationTails = new Map<string, Promise<void>>();
 
   constructor(directory: string, key: Uint8Array) {
     this.#directory = directory;
@@ -93,10 +111,40 @@ export class EncryptedAgentRunRecordStore {
     return snapshot;
   }
 
-  async write(snapshot: AgentRunSnapshot, exclusive: boolean): Promise<void> {
+  async write(
+    snapshot: AgentRunSnapshot,
+    exclusive: boolean,
+    expected?: AgentRunSnapshot,
+  ): Promise<void> {
     const parsed = snapshotSchema.parse(snapshot);
     await mkdir(this.#directory, { recursive: true, mode: 0o700 });
     const locator = this.locator(parsed.run.runId);
+    await this.#serialize(locator, async () => {
+      if (expected && !same(await this.read(parsed.run.runId), expected)) {
+        throw new ConcurrentAgentRunSaveError();
+      }
+      await this.#publish(parsed, locator, exclusive);
+    });
+  }
+
+  async #serialize(locator: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.#publicationTails.get(locator) ?? Promise.resolve();
+    let release = (): void => undefined;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => turn);
+    this.#publicationTails.set(locator, tail);
+    await previous;
+    try {
+      await operation();
+    } finally {
+      release();
+      if (this.#publicationTails.get(locator) === tail) this.#publicationTails.delete(locator);
+    }
+  }
+
+  async #publish(parsed: AgentRunSnapshot, locator: string, exclusive: boolean): Promise<void> {
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.#key, nonce);
     cipher.setAAD(Buffer.from(locator));

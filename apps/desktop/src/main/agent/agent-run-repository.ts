@@ -6,6 +6,7 @@ export {
   AgentRunAlreadyExistsError,
   AgentRunNotFoundError,
   type AgentRunSnapshot,
+  ConcurrentAgentRunSaveError,
 } from "./agent-run-repository-record";
 
 export interface AgentRunRepositoryOptions {
@@ -56,7 +57,7 @@ function assertUniqueHistory(steps: readonly AgentStep[]): void {
   const decisionIds = new Set<string>();
   const pendingDecisions = new Set<string>();
   const recordedTools = new Map<string, unknown>();
-  const pendingTools = new Set<string>();
+  const pendingTools = new Map<string, AgentStep & { kind: "tool-started" }>();
   const finishedCalls = new Set<string>();
   for (const step of steps) {
     if (stepIds.has(step.stepId)) {
@@ -88,15 +89,20 @@ function assertUniqueHistory(steps: readonly AgentStep[]): void {
       ) {
         throw new AgentRunInvariantError("Agent tool-call idempotency key is duplicated");
       }
-      pendingTools.add(step.toolCall.toolCallId);
+      pendingTools.set(step.toolCall.toolCallId, step);
     }
     if (step.kind === "tool-finished") {
       if (finishedCalls.has(step.result.toolCallId)) {
         throw new AgentRunInvariantError("A completed tool result is already committed");
       }
-      if (!pendingTools.delete(step.result.toolCallId)) {
+      const started = pendingTools.get(step.result.toolCallId);
+      if (!started) {
         throw new AgentRunInvariantError("Tool result requires a committed start checkpoint");
       }
+      if (started.toolCall.toolName !== step.result.toolName) {
+        throw new AgentRunInvariantError("Tool result tool name differs from its committed start");
+      }
+      pendingTools.delete(step.result.toolCallId);
       finishedCalls.add(step.result.toolCallId);
     }
     if (step.kind === "interrupted") {
@@ -213,7 +219,7 @@ export class AgentRunRepository {
       run: interrupted(snapshot.run, this.#store.locator(runId)),
       cursor: snapshot.cursor,
     };
-    await this.#store.write(recovered, false);
+    await this.#store.write(recovered, false, snapshot);
     return recovered;
   }
 
@@ -228,6 +234,6 @@ export class AgentRunRepository {
     if (isIdempotentResultRetry(existing, candidate)) return;
     assertSafeText(candidate.run);
     assertUniqueHistory(candidate.run.steps);
-    await this.#store.write(candidate, false);
+    await this.#store.write(candidate, false, existing);
   }
 }

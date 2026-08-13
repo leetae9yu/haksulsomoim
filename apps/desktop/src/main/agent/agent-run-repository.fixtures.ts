@@ -18,11 +18,11 @@ export function activeRun(runId = "run-1", caseId = "case-private-1"): AgentRun 
   });
 }
 
-export function decisionStarted(stepId = "step-1"): AgentStep {
+export function decisionStarted(stepId = "step-1", decisionId = "decision-1"): AgentStep {
   return {
     kind: "decision-started",
     stepId,
-    decisionId: "decision-1",
+    decisionId,
   } as AgentStep;
 }
 
