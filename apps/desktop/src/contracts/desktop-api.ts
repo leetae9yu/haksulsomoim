@@ -1,9 +1,5 @@
 import { z } from "zod";
-export {
-  agentApprovalDecisionRequestSchema,
-  agentRunInterruptRequestSchema,
-  agentRunStartRequestSchema,
-} from "../main/agent/agent-contracts";
+
 export type {
   ActiveAgentRun,
   AgentApprovalDecisionRequest,
@@ -11,6 +7,43 @@ export type {
   AgentRunInterruptRequest,
   AgentRunStartRequest,
 } from "../main/agent/agent-contracts";
+export {
+  agentApprovalDecisionRequestSchema,
+  agentRunInterruptRequestSchema,
+  agentRunStartRequestSchema,
+} from "../main/agent/agent-contracts";
+export type {
+  AgentApprovalDecisionIpcRequest,
+  AgentRunBinding,
+  AgentRunEvent,
+  AgentRunListRequest,
+  AgentRunProjection,
+  AgentRunResumeRequest,
+  AgentRunStartIpcRequest,
+} from "../main/agent/agent-ipc-contracts";
+export {
+  agentApprovalDecisionIpcRequestSchema,
+  agentRunCancelRequestSchema,
+  agentRunEventSchema,
+  agentRunGetRequestSchema,
+  agentRunListRequestSchema,
+  agentRunListResponseSchema,
+  agentRunPauseRequestSchema,
+  agentRunProjectionSchema,
+  agentRunResumeRequestSchema,
+  agentRunStartIpcRequestSchema,
+  agentRunSubscribeRequestSchema,
+} from "../main/agent/agent-ipc-contracts";
+
+import type {
+  AgentApprovalDecisionIpcRequest,
+  AgentRunBinding,
+  AgentRunEvent,
+  AgentRunListRequest,
+  AgentRunProjection,
+  AgentRunResumeRequest,
+  AgentRunStartIpcRequest,
+} from "../main/agent/agent-ipc-contracts";
 
 const caseId = z.string().min(1).max(255);
 const evidenceId = z.string().min(1).max(255);
@@ -196,4 +229,15 @@ export interface DesktopApi {
   codexStatus?(request: EmptyRequest): Promise<CodexStatusResponse>;
   codexLogin?(request: EmptyRequest): Promise<CodexLoginResponse>;
   codexSuggestion?(request: CodexSuggestionRequest): Promise<CodexSuggestionResponse>;
+  startAgentRun?(request: AgentRunStartIpcRequest): Promise<AgentRunProjection>;
+  getAgentRun?(request: AgentRunBinding): Promise<AgentRunProjection>;
+  listAgentRuns?(request: AgentRunListRequest): Promise<readonly AgentRunProjection[]>;
+  pauseAgentRun?(request: AgentRunBinding): Promise<AgentRunProjection>;
+  resumeAgentRun?(request: AgentRunResumeRequest): Promise<AgentRunProjection>;
+  cancelAgentRun?(request: AgentRunBinding): Promise<AgentRunProjection>;
+  decideAgentApproval?(request: AgentApprovalDecisionIpcRequest): Promise<AgentRunProjection>;
+  subscribeAgentRun?(
+    request: AgentRunBinding,
+    listener: (event: AgentRunEvent) => void,
+  ): () => void;
 }

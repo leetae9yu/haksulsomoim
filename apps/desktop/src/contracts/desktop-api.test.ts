@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentApprovalDecisionIpcRequestSchema,
   agentApprovalDecisionRequestSchema,
+  agentRunResumeRequestSchema,
+  agentRunStartIpcRequestSchema,
   agentRunStartRequestSchema,
   caseCreateRequestSchema,
   evidenceAnalyzeRequestSchema,
@@ -86,6 +89,42 @@ describe("desktop IPC contracts", () => {
           approvalDigest: "b".repeat(64),
           outcome: "approved",
         },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("closes Agent lifecycle inputs and bounds renderer user input", () => {
+    const digest = "a".repeat(64);
+    const start = {
+      caseId: "case-1",
+      goal: {
+        kind: "civil-recovery",
+        caseId: "case-1",
+        objective: "prepare-civil-demand",
+      },
+      contextDigest: digest,
+    };
+    expect(agentRunStartIpcRequestSchema.safeParse(start).success).toBe(true);
+    expect(
+      agentRunStartIpcRequestSchema.safeParse({ ...start, providerId: "forged" }).success,
+    ).toBe(false);
+    expect(
+      agentRunResumeRequestSchema.safeParse({
+        caseId: "case-1",
+        runId: "run-1",
+        contextDigest: digest,
+        userInput: "x".repeat(2_001),
+      }).success,
+    ).toBe(false);
+    expect(
+      agentApprovalDecisionIpcRequestSchema.safeParse({
+        caseId: "case-1",
+        runId: "run-1",
+        contextDigest: digest,
+        approvalId: "approval-1",
+        approvalDigest: digest,
+        outcome: "approved",
+        toolResult: { outcome: "completed" },
       }).success,
     ).toBe(false);
   });

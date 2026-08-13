@@ -11,4 +11,13 @@ export const IPC_CHANNELS = Object.freeze({
   codexStatus: "codex:status",
   codexLogin: "codex:login",
   codexSuggestion: "codex:suggestion",
+  agentRunStart: "agent:run:start",
+  agentRunGet: "agent:run:get",
+  agentRunList: "agent:run:list",
+  agentRunPause: "agent:run:pause",
+  agentRunResume: "agent:run:resume",
+  agentRunCancel: "agent:run:cancel",
+  agentApprovalDecision: "agent:approval:decision",
+  agentRunSubscribe: "agent:run:subscribe",
+  agentRunEvent: "agent:run:event",
 });

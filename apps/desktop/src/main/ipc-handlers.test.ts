@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
+  createAgentLifecycleHandlers,
   createDesktopHandlers,
   createOpenOfficialSourceHandler,
   createOpenTrustedAuthenticationHandler,
@@ -43,7 +44,116 @@ function serviceFixture() {
   return { handlers: createDesktopHandlers(service as unknown as CaseRuntimeService), service };
 }
 
+const digest = "a".repeat(64);
+const projection = {
+  caseId: "case-1",
+  runId: "run-1",
+  goal: {
+    kind: "civil-recovery" as const,
+    caseId: "case-1",
+    objective: "prepare-civil-demand" as const,
+  },
+  budget: { decisionsRemaining: 10, toolsRemaining: 7, durationMsRemaining: 200_000 },
+  state: { kind: "paused" as const, reason: "approval-required" as const },
+  lastStepId: "step-1",
+  pendingApproval: {
+    approvalId: "approval-1",
+    approvalDigest: digest,
+    contextDigest: digest,
+    action: "review-draft" as const,
+  },
+};
+
+function agentServiceFixture() {
+  const service = {
+    start: mock(async () => projection),
+    get: mock(async () => projection),
+    list: mock(async () => [projection]),
+    pause: mock(async () => projection),
+    resume: mock(async () => projection),
+    cancel: mock(async () => projection),
+    decideApproval: mock(
+      async (): Promise<Readonly<{ status: "recorded" | "stale"; run: unknown }>> => ({
+        status: "recorded",
+        run: projection,
+      }),
+    ),
+    subscribe: mock((_request: unknown, _listener: (event: unknown) => void) => () => undefined),
+  };
+  return { handlers: createAgentLifecycleHandlers(service), service };
+}
+
 describe("desktop IPC handlers", () => {
+  test("routes the complete agent lifecycle through typed case-bound requests", async () => {
+    const { handlers, service } = agentServiceFixture();
+    const binding = { caseId: "case-1", runId: "run-1", contextDigest: digest };
+    await handlers.startAgentRun({
+      caseId: "case-1",
+      goal: projection.goal,
+      contextDigest: digest,
+    });
+    expect(service.start).toHaveBeenCalledWith({
+      caseId: "case-1",
+      goal: projection.goal,
+      approvedContextDigest: digest,
+    });
+    await handlers.getAgentRun(binding);
+    await handlers.listAgentRuns({ caseId: "case-1" });
+    await handlers.pauseAgentRun(binding);
+    await handlers.resumeAgentRun({ ...binding, userInput: "confirmed fact" });
+    await handlers.cancelAgentRun(binding);
+    await handlers.decideAgentApproval({
+      ...binding,
+      approvalId: "approval-1",
+      approvalDigest: digest,
+      outcome: "approved",
+    });
+    expect(service.get).toHaveBeenCalledWith(binding);
+    expect(service.resume).toHaveBeenCalledWith({ ...binding, userInput: "confirmed fact" });
+    expect(service.decideApproval).toHaveBeenCalledWith({
+      ...binding,
+      approvalId: "approval-1",
+      approvalDigest: digest,
+      outcome: "approved",
+    });
+    const listener = mock(() => undefined);
+    handlers.subscribeAgentRun(binding, listener);
+    const publish = service.subscribe.mock.calls[0]?.[1];
+    publish?.({ caseId: "case-1", runId: "run-1", projection });
+    expect(listener).toHaveBeenCalledWith({ caseId: "case-1", runId: "run-1", projection });
+  });
+
+  test("rejects stale approvals and renderer-supplied tool execution", async () => {
+    const { handlers, service } = agentServiceFixture();
+    service.decideApproval.mockImplementation(async () => ({
+      status: "stale" as const,
+      run: projection,
+    }));
+    const approval = {
+      caseId: "case-1",
+      runId: "run-1",
+      contextDigest: digest,
+      approvalId: "approval-1",
+      approvalDigest: digest,
+      outcome: "approved",
+    } as const;
+    await expect(handlers.decideAgentApproval(approval)).rejects.toThrow("stale");
+    await expect(
+      handlers.decideAgentApproval({
+        ...approval,
+        toolResult: { toolName: "write-local-draft", outcome: "completed" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      handlers.startAgentRun({
+        caseId: "case-1",
+        goal: projection.goal,
+        contextDigest: digest,
+        maskedFacts: [{ id: "forged", text: "renderer supplied" }],
+      }),
+    ).rejects.toThrow();
+    expect(service.start).not.toHaveBeenCalled();
+  });
   test("requires a case ID and strips byte arrays into the main runtime type", async () => {
     const { handlers, service } = serviceFixture();
     await expect(
