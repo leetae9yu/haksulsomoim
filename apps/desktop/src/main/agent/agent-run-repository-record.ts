@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { link, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { agentRunSchema } from "./agent-contracts";
@@ -26,6 +26,7 @@ const encryptedRecordSchema = z.strictObject({
   ciphertext: z.string().min(1),
   authTag: z.string().min(1),
 });
+const publicationTails = new Map<string, Promise<void>>();
 
 export type AgentRunSnapshot = z.infer<typeof snapshotSchema>;
 
@@ -65,13 +66,12 @@ export class ConcurrentAgentRunSaveError extends Error {
 }
 
 /**
- * Revision checks serialize per locator within this store instance. Electron's single main process owns
- * one repository instance; this is deliberately not a cross-process filesystem compare-and-swap.
+ * Revision checks serialize normalized-directory/locator pairs across all instances in this process.
+ * This is deliberately not a cross-process filesystem compare-and-swap.
  */
 export class EncryptedAgentRunRecordStore {
   readonly #directory: string;
   readonly #key: Uint8Array;
-  readonly #publicationTails = new Map<string, Promise<void>>();
 
   constructor(directory: string, key: Uint8Array) {
     this.#directory = directory;
@@ -119,7 +119,8 @@ export class EncryptedAgentRunRecordStore {
     const parsed = snapshotSchema.parse(snapshot);
     await mkdir(this.#directory, { recursive: true, mode: 0o700 });
     const locator = this.locator(parsed.run.runId);
-    await this.#serialize(locator, async () => {
+    const lockKey = `${await realpath(this.#directory)}\0${locator}`;
+    await this.#serialize(lockKey, async () => {
       if (expected && !same(await this.read(parsed.run.runId), expected)) {
         throw new ConcurrentAgentRunSaveError();
       }
@@ -127,20 +128,20 @@ export class EncryptedAgentRunRecordStore {
     });
   }
 
-  async #serialize(locator: string, operation: () => Promise<void>): Promise<void> {
-    const previous = this.#publicationTails.get(locator) ?? Promise.resolve();
+  async #serialize(lockKey: string, operation: () => Promise<void>): Promise<void> {
+    const previous = publicationTails.get(lockKey) ?? Promise.resolve();
     let release = (): void => undefined;
     const turn = new Promise<void>((resolve) => {
       release = resolve;
     });
     const tail = previous.then(() => turn);
-    this.#publicationTails.set(locator, tail);
+    publicationTails.set(lockKey, tail);
     await previous;
     try {
       await operation();
     } finally {
       release();
-      if (this.#publicationTails.get(locator) === tail) this.#publicationTails.delete(locator);
+      if (publicationTails.get(lockKey) === tail) publicationTails.delete(lockKey);
     }
   }
 
