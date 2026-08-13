@@ -1,8 +1,8 @@
-import type { KoreanLawCitation } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import type { AgentLifecycleService } from "../ipc-handlers";
 import type { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
 import type { AgentArtifactOpenRequest } from "./agent-artifact-ipc-contracts";
 import type { EncryptedAgentArtifactStore } from "./agent-artifact-store";
+import { projectAgentCitations } from "./agent-citation-projection";
 import { type AgentRun, agentGoalSchema } from "./agent-contracts";
 import type {
   AgentApprovalDecisionIpcRequest,
@@ -14,12 +14,10 @@ import type { AgentRunRepository } from "./agent-run-repository";
 import type { DesktopAgentRuntime } from "./agent-runtime";
 
 export type RendererListener = (event: unknown) => void;
-type CitationReader = (caseId: string) => Promise<readonly KoreanLawCitation[]>;
 
 export class AgentLifecycleRuntime implements AgentLifecycleService {
   readonly #runtime: DesktopAgentRuntime;
   readonly #runs: AgentRunRepository;
-  readonly #readCitations: CitationReader;
   readonly #artifacts: EncryptedAgentArtifactStore;
   readonly #mutations: RuntimeCaseMutationQueue;
   readonly #contexts = new Map<string, string>();
@@ -31,13 +29,11 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
   constructor(
     runtime: DesktopAgentRuntime,
     runs: AgentRunRepository,
-    readCitations: CitationReader,
     artifacts: EncryptedAgentArtifactStore,
     mutations: RuntimeCaseMutationQueue,
   ) {
     this.#runtime = runtime;
     this.#runs = runs;
-    this.#readCitations = readCitations;
     this.#artifacts = artifacts;
     this.#mutations = mutations;
     runtime.subscribe((run) => this.#queue(run));
@@ -203,25 +199,7 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
 
   async #source(run: AgentRun) {
     const revision = this.#nextRevision(run);
-    const officialStep = run.steps.findLast(
-      (step) =>
-        step.kind === "tool-finished" &&
-        step.result.outcome === "completed" &&
-        (step.result.toolName === "search-official-law" ||
-          step.result.toolName === "read-official-law-detail"),
-    );
-    const citations =
-      officialStep === undefined
-        ? []
-        : (await this.#readCitations(run.caseId)).slice(0, 24).map((citation) => ({
-            citationId: citation.citationId,
-            stepId: officialStep.stepId,
-            sourceUrl: citation.sourceUrl,
-            law: citation.law.trim().slice(0, 160),
-            versionDate: citation.versionDate,
-            retrievedAt: citation.retrievedAt,
-          }));
-    return { run, citations, revision };
+    return { run, citations: projectAgentCitations(run), revision };
   }
 
   #queue(run: AgentRun): void {

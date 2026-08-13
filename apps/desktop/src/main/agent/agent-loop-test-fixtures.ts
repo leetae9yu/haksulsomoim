@@ -151,11 +151,37 @@ export function createLoopHarness(
         status: "ok",
         content: { law: "민사소송법", article: "지급명령" },
         citationIds: ["citation-1"],
+        citations: [
+          {
+            citationId: "citation-1",
+            sourceUrl: "https://law.go.kr/법령/민사소송법",
+            law: "민사소송법",
+            versionDate: "2026-01-01",
+            retrievedAt: "2026-08-13T00:00:00.000Z",
+            toolName: "search_law",
+            resultDigest: "f".repeat(64),
+          },
+        ],
       };
     },
     async detail(citationId) {
       lawDetails.push(citationId);
-      return { status: "ok", content: { citationId }, citationIds: [citationId] };
+      return {
+        status: "ok",
+        content: { citationId },
+        citationIds: [citationId],
+        citations: [
+          {
+            citationId,
+            sourceUrl: "https://law.go.kr/법령/민사소송법",
+            law: "민사소송법",
+            versionDate: "2026-01-01",
+            retrievedAt: "2026-08-13T00:00:00.000Z",
+            toolName: "get_law_text",
+            resultDigest: "e".repeat(64),
+          },
+        ],
+      };
     },
   };
   const law = options.law ?? defaultLaw;

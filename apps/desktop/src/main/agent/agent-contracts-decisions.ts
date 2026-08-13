@@ -12,6 +12,7 @@ import {
   interruptionSchema,
   koreanLawCitationIdSchema,
   observationDigestSchema,
+  officialKoreanLawUrlSchema,
   terminalOutcomeSchema,
 } from "./agent-contracts-core";
 
@@ -75,6 +76,22 @@ export const agentToolCallSchema = z.discriminatedUnion("toolName", [
 ]);
 export type AgentToolCall = z.infer<typeof agentToolCallSchema>;
 
+export const agentCitationProvenanceSchema = z
+  .strictObject({
+    citationId: koreanLawCitationIdSchema,
+    sourceUrl: officialKoreanLawUrlSchema,
+    law: z.string().trim().min(1).max(160),
+    versionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    retrievedAt: z
+      .string()
+      .max(64)
+      .regex(/^\d{4}-\d{2}-\d{2}T/),
+    toolName: z.enum(["search_law", "get_law_text"]),
+    resultDigest: observationDigestSchema,
+  })
+  .readonly();
+export type AgentCitationProvenance = z.infer<typeof agentCitationProvenanceSchema>;
+
 const toolResult = <TToolName extends AgentToolCall["toolName"]>(toolName: TToolName) =>
   z
     .strictObject({
@@ -88,6 +105,7 @@ const toolResult = <TToolName extends AgentToolCall["toolName"]>(toolName: TTool
         .refine((ids) => new Set(ids).size === ids.length)
         .default([])
         .readonly(),
+      citations: z.array(agentCitationProvenanceSchema).max(24).default([]).readonly(),
     })
     .readonly();
 const draftToolResultSchema = toolResult("write-local-draft")

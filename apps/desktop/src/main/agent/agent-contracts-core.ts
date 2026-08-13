@@ -20,6 +20,18 @@ export const approvalDigestSchema = digest.brand<"ApprovalDigest">();
 export const contextDigestSchema = digest.brand<"ContextDigest">();
 export const observationDigestSchema = digest.brand<"ObservationDigest">();
 export const koreanLawCitationIdSchema = semanticId.brand<"KoreanLawCitationId">();
+const officialKoreanLawOrigins = new Set(["https://law.go.kr", "https://www.law.go.kr"]);
+export const officialKoreanLawUrlSchema = z
+  .string()
+  .max(2_048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return officialKoreanLawOrigins.has(url.origin) && url.username === "" && url.password === "";
+    } catch {
+      return false;
+    }
+  }, "Citation must use an official Korean law HTTPS origin");
 
 export const agentBudgetLimits = Object.freeze({
   decisions: 12,

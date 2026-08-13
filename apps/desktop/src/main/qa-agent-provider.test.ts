@@ -29,7 +29,12 @@ function context(observations: readonly AgentToolResult[]): ApprovedAgentDecisio
       objective: "prepare-civil-demand",
     }),
     maskedFacts: [],
-    citationIds: observations.length > 1 ? ["citation-1"] : [],
+    citationIds:
+      observations.length > 2
+        ? ["citation-1", "citation-2"]
+        : observations.length > 1
+          ? ["citation-1"]
+          : [],
     observations,
   };
 }
@@ -86,13 +91,26 @@ describe("standard desktop QA Agent provider", () => {
       outcome: "completed",
       observationDigest: "d".repeat(64),
     });
-    const decision = await provider.nextDecision(context([observationA, law]));
+    const secondLawDecision = await provider.nextDecision(context([observationA, law]));
+    expect(secondLawDecision).toMatchObject({
+      kind: "tool",
+      toolCall: {
+        toolName: "search-official-law",
+        basisObservationDigest: law.observationDigest,
+      },
+    });
+    const secondLaw = agentToolResultSchema.parse({
+      ...law,
+      toolCallId: "host-second-law",
+      observationDigest: "e".repeat(64),
+    });
+    const decision = await provider.nextDecision(context([observationA, law, secondLaw]));
 
     expect(decision).toMatchObject({
       kind: "tool",
       toolCall: {
         toolName: "write-local-draft",
-        contentDigest: law.observationDigest,
+        contentDigest: secondLaw.observationDigest,
       },
     });
   });

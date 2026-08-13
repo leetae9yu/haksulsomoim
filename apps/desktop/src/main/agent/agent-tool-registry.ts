@@ -1,11 +1,23 @@
+import type { KoreanLawCitation } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import type { RedactedText } from "../../security/redaction";
-import { type AgentToolCall, type AgentToolResult, agentToolCallSchema } from "./agent-contracts";
+import {
+  type AgentCitationProvenance,
+  type AgentToolCall,
+  type AgentToolResult,
+  agentCitationProvenanceSchema,
+  agentToolCallSchema,
+} from "./agent-contracts";
 import { AgentToolPolicyError } from "./agent-loop-errors";
 import type { AgentCaseProjection } from "./agent-loop-types";
 import { type PreparedAgentObservation, prepareAgentObservation } from "./agent-tool-observation";
 
 export type AgentOfficialLawResult =
-  | Readonly<{ status: "ok"; content: unknown; citationIds: readonly string[] }>
+  | Readonly<{
+      status: "ok";
+      content: unknown;
+      citationIds: readonly string[];
+      citations: readonly KoreanLawCitation[];
+    }>
   | Readonly<{ status: "unavailable"; reason: "credentials" | "mcp-unavailable" }>;
 
 export interface AgentOfficialLawTools {
@@ -34,6 +46,7 @@ export type AgentToolExecution = Readonly<{
   status: "completed" | "pending" | "unavailable";
   value: unknown;
   citationIds: readonly string[];
+  citations?: readonly AgentCitationProvenance[];
 }>;
 
 type RegistryDependencies = Readonly<{
@@ -52,14 +65,26 @@ function lawExecution(result: AgentOfficialLawResult): AgentToolExecution {
   if (result.status === "unavailable") {
     return { status: "unavailable", value: { reason: result.reason }, citationIds: [] };
   }
-  if (!validCitationIds(result.citationIds)) {
+  const citations = agentCitationProvenanceSchema.array().safeParse(result.citations);
+  if (
+    !validCitationIds(result.citationIds) ||
+    !citations.success ||
+    (citations.data.length > 0 &&
+      JSON.stringify(citations.data.map((citation) => citation.citationId)) !==
+        JSON.stringify(result.citationIds))
+  ) {
     return {
       status: "unavailable",
       value: { reason: "invalid-law-result" },
       citationIds: [],
     };
   }
-  return { status: "completed", value: result.content, citationIds: result.citationIds };
+  return {
+    status: "completed",
+    value: result.content,
+    citationIds: result.citationIds,
+    citations: citations.data,
+  };
 }
 
 export class AgentToolRegistry {
@@ -73,8 +98,15 @@ export class AgentToolRegistry {
     caseId: string,
     call: AgentToolCall,
     execution: AgentToolExecution,
+    priorResults: readonly AgentToolResult[] = [],
   ): PreparedAgentObservation {
-    return prepareAgentObservation(caseId, call, execution, this.#dependencies.redact);
+    return prepareAgentObservation(
+      caseId,
+      call,
+      execution,
+      this.#dependencies.redact,
+      priorResults,
+    );
   }
 
   sanitize(caseId: string, call: AgentToolCall): AgentToolCall {

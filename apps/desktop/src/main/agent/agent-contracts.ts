@@ -7,6 +7,7 @@ export {
   terminalOutcomeSchema,
 } from "./agent-contracts-core";
 export type {
+  AgentCitationProvenance,
   AgentDecision,
   AgentStep,
   AgentToolCall,
@@ -15,6 +16,7 @@ export type {
   ApprovalRequest,
 } from "./agent-contracts-decisions";
 export {
+  agentCitationProvenanceSchema,
   agentDecisionSchema,
   agentStepSchema,
   agentToolCallSchema,

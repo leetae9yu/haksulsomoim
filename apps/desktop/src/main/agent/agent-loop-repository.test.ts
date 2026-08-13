@@ -97,10 +97,40 @@ describe("Agent loop encrypted checkpoint integration", () => {
         async search(query) {
           adapterQuery = query;
           checkpointBeforeAdapter = runs.persistedQueries.at(-1) ?? "";
-          return { status: "ok", content: { law: "민법" }, citationIds: ["citation-1"] };
+          return {
+            status: "ok",
+            content: { law: "민법" },
+            citationIds: ["citation-1"],
+            citations: [
+              {
+                citationId: "citation-1",
+                sourceUrl: "https://law.go.kr/법령/민법",
+                law: "민법",
+                versionDate: "2026-01-01",
+                retrievedAt: "2026-08-13T00:00:00.000Z",
+                toolName: "search_law",
+                resultDigest: "f".repeat(64),
+              },
+            ],
+          };
         },
         async detail(citationId) {
-          return { status: "ok", content: { citationId }, citationIds: [citationId] };
+          return {
+            status: "ok",
+            content: { citationId },
+            citationIds: [citationId],
+            citations: [
+              {
+                citationId,
+                sourceUrl: "https://law.go.kr/법령/민법",
+                law: "민법",
+                versionDate: "2026-01-01",
+                retrievedAt: "2026-08-13T00:00:00.000Z",
+                toolName: "get_law_text",
+                resultDigest: "e".repeat(64),
+              },
+            ],
+          };
         },
       },
       drafts: {

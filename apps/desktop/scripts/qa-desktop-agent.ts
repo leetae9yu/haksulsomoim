@@ -28,7 +28,12 @@ async function approveContext(page: Page, actions: QaAction[]) {
   return start;
 }
 
-async function runHappy(page: Page, actions: QaAction[], start: ReturnType<Page["getByTestId"]>) {
+async function runHappy(
+  page: Page,
+  actions: QaAction[],
+  start: ReturnType<Page["getByTestId"]>,
+  evidenceDirectory: string,
+) {
   const completed = page.locator('[data-agent-status="completed"]').waitFor();
   await start.focus();
   await page.keyboard.press("Enter");
@@ -41,11 +46,22 @@ async function runHappy(page: Page, actions: QaAction[], start: ReturnType<Page[
   for (const required of ["inspect-masked-case", "search-official-law", "write-local-draft"]) {
     if (!distinctTools.includes(required)) throw new Error(`Agent did not complete ${required}`);
   }
-  const law = page.locator('[data-agent-tool="search-official-law"]').last();
-  const sourceStepId = await law.getAttribute("data-agent-depends-on");
-  if (sourceStepId === null) throw new Error("Law search has no persisted observation dependency");
+  const laws = page.locator('[data-agent-tool="search-official-law"][data-agent-depends-on]');
+  if ((await laws.count()) !== 2) throw new Error("Agent did not complete two causal law searches");
+  const firstSource = await laws.nth(0).getAttribute("data-agent-depends-on");
+  const firstStep = await laws.nth(0).getAttribute("data-agent-step");
+  const secondSource = await laws.nth(1).getAttribute("data-agent-depends-on");
+  const secondStep = await laws.nth(1).getAttribute("data-agent-step");
+  if (
+    firstSource === null ||
+    firstStep === null ||
+    secondSource !== firstStep ||
+    secondStep === null
+  ) {
+    throw new Error("Law searches do not form an exact persisted observation chain");
+  }
   await page
-    .locator(`[data-agent-step="${sourceStepId}"][data-agent-tool="inspect-masked-case"]`)
+    .locator(`[data-agent-step="${firstSource}"][data-agent-tool="inspect-masked-case"]`)
     .waitFor();
   actions.push({
     action: "prove observation-driven keyboard flow",
@@ -53,7 +69,30 @@ async function runHappy(page: Page, actions: QaAction[], start: ReturnType<Page[
       "native keyboard controls started the run; law search linked to the persisted inspection",
   });
 
-  await page.locator(".agent-final-plan [data-agent-citation]").first().waitFor();
+  const agentCitations = page.locator(".agent-final-plan [data-agent-citation]");
+  await agentCitations.nth(1).waitFor();
+  const projected = await agentCitations.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      id: node.getAttribute("data-agent-citation"),
+      step: node.getAttribute("data-agent-citation-step"),
+    })),
+  );
+  const expectedCitations = [
+    { id: "a".repeat(64), step: firstStep },
+    { id: "b".repeat(64), step: secondStep },
+  ];
+  if (JSON.stringify(projected) !== JSON.stringify(expectedCitations)) {
+    throw new Error("Agent citations are not linked to their exact law observations");
+  }
+  if (
+    (await page
+      .locator(
+        '.agent-final-plan [data-agent-citation="230af24aa64ea4819039b5a7664367ba865262a9324d8636f427f4c3f21681bf"]',
+      )
+      .count()) !== 0
+  ) {
+    throw new Error("Manual guidance citation contaminated the Agent timeline");
+  }
   const artifactButton = page.locator("[data-agent-artifact]").first();
   const artifactId = await artifactButton.getAttribute("data-agent-artifact");
   if (artifactId === null) throw new Error("Completed draft exposed no bounded artifact ID");
@@ -62,13 +101,24 @@ async function runHappy(page: Page, actions: QaAction[], start: ReturnType<Page[
   const artifact = page.locator(`[data-agent-artifact-view="${artifactId}"]`);
   await artifact.waitFor();
   await artifact.locator("[data-agent-artifact-citation]").first().waitFor();
+  const artifactCitationIds = await artifact
+    .locator("[data-agent-artifact-citation]")
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-agent-artifact-citation")));
+  if (JSON.stringify(artifactCitationIds) !== JSON.stringify(["b".repeat(64)])) {
+    throw new Error("Encrypted artifact did not retain only its causal citation");
+  }
   const artifactText = await artifact.innerText();
   if (artifactText.includes("file://") || artifactText.includes("/tmp/")) {
     throw new Error("App-owned artifact view exposed a filesystem path");
   }
+  await page.screenshot({
+    path: resolve(evidenceDirectory, "agent-happy-artifact.png"),
+    fullPage: true,
+  });
   actions.push({
     action: "open encrypted cited artifact",
-    observed: "production IPC opened a bounded app-owned draft view with an official citation",
+    observed:
+      "production IPC opened a bounded draft with only the second law observation citation; manual citation stayed separate",
   });
 
   const mutated = page.locator('[data-testid="civil-state"][data-state="payment-order-pending"]');
@@ -154,7 +204,7 @@ export async function runAgentScenario(
   await workspace.waitFor();
   await page.locator('[data-agent-provider="authenticated"]').waitFor();
   const start = await approveContext(page, actions);
-  if (scenario === "agent-happy") await runHappy(page, actions, start);
+  if (scenario === "agent-happy") await runHappy(page, actions, start, evidenceDirectory);
   else if (scenario === "agent-approval") {
     await runApproval(page, actions, start, evidenceDirectory);
   } else await runLiveControls(page, actions, start);

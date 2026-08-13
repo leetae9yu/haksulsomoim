@@ -14,6 +14,7 @@ import {
   caseIdSchema,
   contextDigestSchema,
   koreanLawCitationIdSchema,
+  officialKoreanLawUrlSchema,
 } from "./agent-contracts-core";
 
 const runStateSchema = z.discriminatedUnion("kind", [
@@ -94,20 +95,10 @@ export const agentStepSummarySchema = z.discriminatedUnion("kind", [
 ]);
 export type AgentStepSummary = z.infer<typeof agentStepSummarySchema>;
 
-const officialCitationOrigins = new Set(["https://law.go.kr", "https://www.law.go.kr"]);
 export const agentOfficialCitationProjectionSchema = z.strictObject({
   citationId: koreanLawCitationIdSchema,
   stepId: agentStepIdSchema,
-  sourceUrl: z
-    .string()
-    .max(2_048)
-    .refine((value) => {
-      try {
-        return officialCitationOrigins.has(new URL(value).origin);
-      } catch {
-        return false;
-      }
-    }, "Citation must use an official Korean law HTTPS origin"),
+  sourceUrl: officialKoreanLawUrlSchema,
   law: z.string().trim().min(1).max(160),
   versionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   retrievedAt: z

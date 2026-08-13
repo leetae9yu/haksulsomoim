@@ -102,9 +102,22 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
         },
       });
     }
-    const law = completed(input, 1, "search-official-law", "official-law");
+    const firstLaw = completed(input, 1, "search-official-law", "first official-law");
     if (input.observations.length === 2) {
-      if (input.citationIds.length === 0) throw new Error("QA Agent requires an official citation");
+      return agentDecisionSchema.parse({
+        kind: "tool",
+        decisionId: "qa-decision-second-law",
+        toolCall: {
+          toolName: "search-official-law",
+          toolCallId: "qa-tool-second-law",
+          query: `민사소송 절차 ${firstLaw.observationDigest.slice(0, 12)}`,
+          basisObservationDigest: firstLaw.observationDigest,
+        },
+      });
+    }
+    const secondLaw = completed(input, 2, "search-official-law", "second official-law");
+    if (input.observations.length === 3) {
+      if (input.citationIds.length < 2) throw new Error("QA Agent requires two official citations");
       return agentDecisionSchema.parse({
         kind: "tool",
         decisionId: "qa-decision-draft",
@@ -113,15 +126,15 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
           toolCallId: "qa-tool-draft",
           artifactKind:
             input.goal.kind === "civil-recovery" ? "civil-demand" : "criminal-complaint",
-          contentDigest: law.observationDigest,
+          contentDigest: secondLaw.observationDigest,
         },
       });
     }
-    const draft = completed(input, 2, "write-local-draft", "encrypted-draft");
+    const draft = completed(input, 3, "write-local-draft", "encrypted-draft");
     if (draft.toolName !== "write-local-draft" || draft.artifactId === undefined) {
       throw new Error("QA Agent requires an encrypted draft artifact");
     }
-    if (input.observations.length !== 3) throw new Error("QA Agent received extra observations");
+    if (input.observations.length !== 4) throw new Error("QA Agent received extra observations");
     return agentDecisionSchema.parse({
       kind: "finish",
       decisionId: "qa-decision-finish",

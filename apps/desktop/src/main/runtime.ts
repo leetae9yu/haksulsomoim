@@ -111,13 +111,7 @@ export async function createDesktopRuntime(
     external,
     agentRuns,
   );
-  const agentLifecycle = new AgentLifecycleRuntime(
-    agent,
-    agentRuns,
-    async (caseId) => (await repository.read(caseId)).retrievedCitations,
-    agentArtifacts,
-    mutations,
-  );
+  const agentLifecycle = new AgentLifecycleRuntime(agent, agentRuns, agentArtifacts, mutations);
   let disposal: Promise<void> | undefined;
 
   return {

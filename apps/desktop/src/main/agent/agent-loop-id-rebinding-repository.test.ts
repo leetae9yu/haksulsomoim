@@ -86,7 +86,22 @@ describe("encrypted Agent ID rebinding", () => {
       redact: (caseId, value) => redactor.redact(caseId, value),
       law: {
         async search() {
-          return { status: "ok", content: { law: "민사소송법" }, citationIds: ["citation-1"] };
+          return {
+            status: "ok",
+            content: { law: "민사소송법" },
+            citationIds: ["citation-1"],
+            citations: [
+              {
+                citationId: "citation-1",
+                sourceUrl: "https://law.go.kr/법령/민사소송법",
+                law: "민사소송법",
+                versionDate: "2026-01-01",
+                retrievedAt: "2026-08-13T00:00:00.000Z",
+                toolName: "search_law",
+                resultDigest: "f".repeat(64),
+              },
+            ],
+          };
         },
         async detail() {
           return { status: "unavailable", reason: "mcp-unavailable" };

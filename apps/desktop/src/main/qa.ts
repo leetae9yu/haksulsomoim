@@ -60,25 +60,34 @@ function createQaOcr(): Promise<LocalOcrPort> {
 }
 
 function createQaLaw(): KoreanLawMcpAdapter {
+  let call = 0;
   return {
     tools: () => ["search_law"],
     async discover() {
       return ["search_law"];
     },
     async execute() {
+      call += 1;
+      const ids = [
+        "230af24aa64ea4819039b5a7664367ba865262a9324d8636f427f4c3f21681bf",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      ] as const;
+      const citationId = ids[Math.min(call - 1, 2)] ?? ids[2];
+      const law = call === 1 ? "수동 민사집행법" : call === 2 ? "Agent 민법" : "Agent 민사소송법";
       return {
         ok: true,
         value: {
-          content: { qa: true },
+          content: { qa: true, law },
           citations: [
             {
-              citationId: "230af24aa64ea4819039b5a7664367ba865262a9324d8636f427f4c3f21681bf",
-              sourceUrl: "https://www.law.go.kr/법령/민사집행법",
-              law: "민사집행법",
+              citationId,
+              sourceUrl: `https://www.law.go.kr/법령/${encodeURIComponent(law)}`,
+              law,
               versionDate: "2026-01-01",
               retrievedAt: "2026-08-11T00:00:00.000Z",
               toolName: "search_law",
-              resultDigest: "230af24aa64ea4819039b5a7664367ba865262a9324d8636f427f4c3f21681bf",
+              resultDigest: citationId,
             },
           ],
         },

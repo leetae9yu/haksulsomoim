@@ -1,5 +1,9 @@
 import type { AgentRun } from "./agent-contracts";
-import { createHostCompletionDigest, parseAndRebindAgentDecision } from "./agent-loop-decisions";
+import {
+  createHostCompletionDigest,
+  parseAndRebindAgentDecision,
+  toolResults,
+} from "./agent-loop-decisions";
 import { AgentLoopStateError } from "./agent-loop-errors";
 import {
   type AgentLoopControl,
@@ -119,6 +123,7 @@ export class AgentLoopRunner {
         this.#control.caseId,
         accepted.call,
         execution,
+        toolResults(accepted.run),
       );
       const run = await finishAgentToolTurn(
         this.#dependencies,
@@ -126,7 +131,9 @@ export class AgentLoopRunner {
         observation.result,
         execution,
       );
-      for (const citationId of execution.citationIds) this.#control.citationIds.add(citationId);
+      for (const citationId of observation.result.citationIds) {
+        this.#control.citationIds.add(citationId);
+      }
       if (run.state.kind !== "active") return run;
     }
   }

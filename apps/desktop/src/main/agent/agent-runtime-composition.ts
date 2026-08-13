@@ -78,6 +78,7 @@ function lawResult(
     status: "ok",
     content: result.value.content,
     citationIds: result.value.citations.map((citation) => citation.citationId),
+    citations: result.value.citations,
   };
 }
 

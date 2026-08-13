@@ -24,13 +24,31 @@ export function prepareAgentObservation(
   call: AgentToolCall,
   execution: AgentToolExecution,
   redact: (caseId: string, value: string) => RedactedText,
+  priorResults: readonly AgentToolResult[] = [],
 ): PreparedAgentObservation {
+  const priorCitations = priorResults.flatMap((result) => result.citations);
+  const usedIds = new Set<string>(priorCitations.map((citation) => citation.citationId));
+  const citations = (execution.citations ?? []).map((citation) => {
+    if (!usedIds.has(citation.citationId)) {
+      usedIds.add(citation.citationId);
+      return citation;
+    }
+    const identical = priorCitations.find(
+      (candidate) => JSON.stringify(candidate) === JSON.stringify(citation),
+    );
+    if (identical !== undefined) return identical;
+    const citationId = createHash("sha256").update(JSON.stringify(citation)).digest("hex");
+    usedIds.add(citationId);
+    return { ...citation, citationId };
+  });
+  const citationIds =
+    citations.length > 0 ? citations.map((citation) => citation.citationId) : execution.citationIds;
   const summary = redact(
     caseId,
     serialize({
       status: execution.status,
       value: execution.value,
-      citationIds: execution.citationIds,
+      citationIds,
     }),
   ).slice(0, agentObservationTextLimit);
   const observationDigest = createHash("sha256").update(summary).digest("hex");
@@ -51,7 +69,8 @@ export function prepareAgentObservation(
       toolCallId: call.toolCallId,
       outcome,
       observationDigest,
-      citationIds: execution.citationIds,
+      citationIds,
+      citations,
       ...(artifactId === undefined ? {} : { artifactId }),
     }),
   };

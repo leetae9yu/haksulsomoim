@@ -12,11 +12,41 @@ function fixture() {
     redact: (caseId, value) => redactor.redact(caseId, value),
     law: {
       async search() {
-        return { status: "ok", content: { law: "민법" }, citationIds: ["citation-1"] };
+        return {
+          status: "ok",
+          content: { law: "민법" },
+          citationIds: ["citation-1"],
+          citations: [
+            {
+              citationId: "citation-1",
+              sourceUrl: "https://law.go.kr/법령/민법",
+              law: "민법",
+              versionDate: "2026-01-01",
+              retrievedAt: "2026-08-13T00:00:00.000Z",
+              toolName: "search_law" as const,
+              resultDigest: "c".repeat(64),
+            },
+          ],
+        };
       },
       async detail(citationId) {
         details.push(citationId);
-        return { status: "ok", content: { citationId }, citationIds: [citationId] };
+        return {
+          status: "ok",
+          content: { citationId },
+          citationIds: [citationId],
+          citations: [
+            {
+              citationId,
+              sourceUrl: "https://law.go.kr/법령/민법",
+              law: "민법",
+              versionDate: "2026-01-01",
+              retrievedAt: "2026-08-13T00:00:00.000Z",
+              toolName: "get_law_text" as const,
+              resultDigest: "d".repeat(64),
+            },
+          ],
+        };
       },
     },
     drafts: {
@@ -39,6 +69,34 @@ function fixture() {
 }
 
 describe("closed Agent tool registry", () => {
+  test("persists typed provenance on the exact official-law observation", async () => {
+    const { projection, registry } = fixture();
+    const call = agentToolCallSchema.parse({
+      toolName: "search-official-law",
+      toolCallId: "law-provenance",
+      query: "민법",
+    });
+    const execution = await registry.execute("case-1", call, projection);
+    const observation = registry.prepareObservation("case-1", call, execution);
+
+    expect(observation.result.citationIds.map(String)).toEqual(["citation-1"]);
+    expect(observation.result.citations).toEqual([
+      expect.objectContaining({ citationId: "citation-1", law: "민법" }),
+    ]);
+
+    const conflicting = registry.prepareObservation(
+      "case-1",
+      agentToolCallSchema.parse({ ...call, toolCallId: "law-conflict" }),
+      {
+        ...execution,
+        citations: (execution.citations ?? []).map((item) => ({ ...item, law: "형법" })),
+      },
+      [observation.result],
+    );
+    expect(conflicting.result.citationIds[0]).not.toBe("citation-1");
+    expect(conflicting.result.citations[0]?.citationId).toBe(conflicting.result.citationIds[0]);
+  });
+
   test("executes each local safe tool as data without workflow side effects", async () => {
     const { draftWrites, projection, registry } = fixture();
     const inspect = agentToolCallSchema.parse({
