@@ -1,5 +1,6 @@
 import type { KoreanLawCitation } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import type { AgentLifecycleService } from "../ipc-handlers";
+import type { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
 import type { AgentArtifactOpenRequest } from "./agent-artifact-ipc-contracts";
 import type { EncryptedAgentArtifactStore } from "./agent-artifact-store";
 import { type AgentRun, agentGoalSchema } from "./agent-contracts";
@@ -20,6 +21,7 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
   readonly #runs: AgentRunRepository;
   readonly #readCitations: CitationReader;
   readonly #artifacts: EncryptedAgentArtifactStore;
+  readonly #mutations: RuntimeCaseMutationQueue;
   readonly #contexts = new Map<string, string>();
   readonly #knownRuns = new Map<string, Set<string>>();
   readonly #listeners = new Map<string, Set<RendererListener>>();
@@ -31,11 +33,13 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
     runs: AgentRunRepository,
     readCitations: CitationReader,
     artifacts: EncryptedAgentArtifactStore,
+    mutations: RuntimeCaseMutationQueue,
   ) {
     this.#runtime = runtime;
     this.#runs = runs;
     this.#readCitations = readCitations;
     this.#artifacts = artifacts;
+    this.#mutations = mutations;
     runtime.subscribe((run) => this.#queue(run));
   }
 
@@ -47,7 +51,15 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
   }
 
   async openArtifact(request: AgentArtifactOpenRequest) {
+    return this.#mutations.run(request.caseId, () => this.#openCurrentArtifact(request));
+  }
+
+  async #openCurrentArtifact(request: AgentArtifactOpenRequest) {
+    const current = await this.#runtime.openCase(request.caseId);
     this.#assertContext(request.caseId, request.contextDigest);
+    if (current.contextDigest !== request.contextDigest) {
+      throw new Error("Agent context consent is stale");
+    }
     const run = (await this.#runs.readCurrent(request.runId)).run;
     this.#assertCase(run, request.caseId);
     const result = run.steps.find(
@@ -67,10 +79,26 @@ export class AgentLifecycleRuntime implements AgentLifecycleService {
     if (started?.kind !== "tool-started" || started.toolCall.toolName !== "write-local-draft") {
       throw new Error("Agent artifact has no durable source");
     }
+    const sourceDigest = started.toolCall.contentDigest;
+    const artifactKind = started.toolCall.artifactKind;
+    const startedIndex = run.steps.indexOf(started);
+    const source = run.steps
+      .slice(0, startedIndex)
+      .findLast(
+        (step) =>
+          step.kind === "tool-finished" &&
+          step.result.outcome === "completed" &&
+          step.result.observationDigest === sourceDigest &&
+          (step.result.toolName === "search-official-law" ||
+            step.result.toolName === "read-official-law-detail"),
+      );
     const artifact = await this.#artifacts.open(request.caseId, request.artifactId);
     if (
-      artifact.sourceObservationDigest !== started.toolCall.contentDigest ||
-      artifact.view.artifactKind !== started.toolCall.artifactKind
+      source?.kind !== "tool-finished" ||
+      source.result.citationIds.length === 0 ||
+      artifact.sourceObservationDigest !== sourceDigest ||
+      artifact.view.artifactKind !== artifactKind ||
+      JSON.stringify(artifact.view.citationIds) !== JSON.stringify(source.result.citationIds)
     ) {
       throw new Error("Agent artifact source binding changed");
     }

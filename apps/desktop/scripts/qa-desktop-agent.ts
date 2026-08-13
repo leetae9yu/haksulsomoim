@@ -70,6 +70,22 @@ async function runHappy(page: Page, actions: QaAction[], start: ReturnType<Page[
     action: "open encrypted cited artifact",
     observed: "production IPC opened a bounded app-owned draft view with an official citation",
   });
+
+  const mutated = page.locator('[data-testid="civil-state"][data-state="payment-order-pending"]');
+  const mutationVisible = mutated.waitFor();
+  await page.getByRole("button", { name: "지급명령 신청 완료를 직접 확인" }).click();
+  await mutationVisible;
+  const staleRejected = page.locator(
+    '[role="alert"]:has-text("암호화 초안을 안전하게 열 수 없습니다.")',
+  );
+  const rejectionVisible = staleRejected.waitFor();
+  await artifactButton.click();
+  await rejectionVisible;
+  actions.push({
+    action: "reject stale artifact open",
+    observed:
+      "a successful workflow mutation atomically invalidated the pre-mutation digest through production IPC",
+  });
   actions.push({
     action: "complete autonomous run",
     observed: `${distinctTools.join(" -> ")} completed with a cited encrypted artifact`,

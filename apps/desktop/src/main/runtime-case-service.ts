@@ -33,14 +33,16 @@ interface Dependencies {
   redactor: Redactor;
   law: KoreanLawMcpAdapter;
   provider(): Promise<CodexAgentProvider>;
+  mutations?: RuntimeCaseMutationQueue;
 }
 
 export class CaseRuntimeService {
   readonly #dependencies: Dependencies;
-  readonly #mutations = new RuntimeCaseMutationQueue();
+  readonly #mutations: RuntimeCaseMutationQueue;
 
   constructor(dependencies: Dependencies) {
     this.#dependencies = dependencies;
+    this.#mutations = dependencies.mutations ?? new RuntimeCaseMutationQueue();
   }
 
   async createCase(input: Readonly<{ amountKrw: number }>) {

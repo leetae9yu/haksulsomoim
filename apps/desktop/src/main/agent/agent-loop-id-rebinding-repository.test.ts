@@ -49,8 +49,21 @@ describe("encrypted Agent ID rebinding", () => {
         };
       }
       if (index === 1) {
-        const observation = input.observations[0];
-        if (observation === undefined) throw new Error("missing inspect observation");
+        return {
+          kind: "tool",
+          decisionId: ACCOUNT_ID,
+          toolCall: {
+            toolName: "search-official-law",
+            toolCallId: SECRET_ID,
+            query: "지급명령",
+          },
+        };
+      }
+      if (index === 2) {
+        const observation = input.observations.find(
+          (candidate) => candidate.toolName === "search-official-law",
+        );
+        if (observation === undefined) throw new Error("missing cited law observation");
         return {
           kind: "tool",
           decisionId: ACCOUNT_ID,
@@ -73,7 +86,7 @@ describe("encrypted Agent ID rebinding", () => {
       redact: (caseId, value) => redactor.redact(caseId, value),
       law: {
         async search() {
-          return { status: "unavailable", reason: "mcp-unavailable" };
+          return { status: "ok", content: { law: "민사소송법" }, citationIds: ["citation-1"] };
         },
         async detail() {
           return { status: "unavailable", reason: "mcp-unavailable" };
@@ -120,7 +133,7 @@ describe("encrypted Agent ID rebinding", () => {
 
     expect(run.state.kind).toBe("terminal");
     expect(containsRawIdentifier(reopened.run)).toBe(false);
-    expect(adapterIds).toEqual(["tool-2"]);
+    expect(adapterIds).toEqual(["tool-3"]);
     expect(adapterIds.some((id) => [PHONE_ID, ACCOUNT_ID, SECRET_ID].includes(id))).toBe(false);
   });
 });

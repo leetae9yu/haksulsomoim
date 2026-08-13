@@ -93,6 +93,7 @@ export async function createDesktopRuntime(
     redactor,
     law,
     provider: getProvider,
+    mutations,
   });
   const external = {
     law,
@@ -115,6 +116,7 @@ export async function createDesktopRuntime(
     agentRuns,
     async (caseId) => (await repository.read(caseId)).retrievedCitations,
     agentArtifacts,
+    mutations,
   );
   let disposal: Promise<void> | undefined;
 

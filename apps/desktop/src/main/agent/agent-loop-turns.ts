@@ -5,6 +5,7 @@ import {
   classifyToolCall,
   type ReboundAgentDecision,
   resolveToolCorrelation,
+  toolResults,
 } from "./agent-loop-decisions";
 import { AgentToolPolicyError } from "./agent-loop-errors";
 import {
@@ -39,6 +40,7 @@ export type AcceptedAgentTurn =
       run: AgentRun;
       call: AgentToolCall;
       projection: AgentCaseProjection;
+      citationIds: readonly string[];
     }>;
 
 export async function prepareAgentTurn(
@@ -127,6 +129,7 @@ export async function acceptAgentDecision(
       await commitControlRun(dependencies, control, run, true);
       return { kind: "stop", run };
     }
+    let sourceCitationIds: readonly string[] = [];
     if (safeDecision.kind === "tool") {
       if (rebound.toolCorrelation === undefined) {
         const run = policyFailure(dependencies, current, decisionId, duration);
@@ -148,14 +151,10 @@ export async function acceptAgentDecision(
         toolCall: resolution.call,
       });
       try {
-        dependencies.tools.validate(
+        sourceCitationIds = dependencies.tools.validate(
           resolution.call,
           [...control.citationIds],
-          current.steps.flatMap((step) =>
-            step.kind === "tool-finished" && step.result.outcome === "completed"
-              ? [step.result.observationDigest]
-              : [],
-          ),
+          toolResults(current),
         );
       } catch (error) {
         if (!(error instanceof AgentToolPolicyError)) throw error;
@@ -200,6 +199,12 @@ export async function acceptAgentDecision(
       dependencies.identifiers.nextStepId(),
     );
     await commitControlRun(dependencies, control, started, false);
-    return { kind: "execute", run: started, call: reduction.toolCall, projection };
+    return {
+      kind: "execute",
+      run: started,
+      call: reduction.toolCall,
+      projection,
+      citationIds: sourceCitationIds,
+    };
   });
 }

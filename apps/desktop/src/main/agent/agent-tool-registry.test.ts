@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Redactor } from "../../security/redaction";
-import { agentToolCallSchema } from "./agent-contracts";
+import { agentToolCallSchema, agentToolResultSchema } from "./agent-contracts";
 import type { AgentCaseProjection } from "./agent-loop-types";
 import { type AgentEncryptedDraftWriter, AgentToolRegistry } from "./agent-tool-registry";
 
@@ -74,7 +74,7 @@ describe("closed Agent tool registry", () => {
       status: "completed",
       value: { gaps: ["evidence-file", "confirmed-facts"] },
     });
-    expect(await registry.execute("case-1", draft, projection)).toMatchObject({
+    expect(await registry.execute("case-1", draft, projection, ["citation-1"])).toMatchObject({
       status: "completed",
       value: { artifactId: "artifact-1" },
     });
@@ -96,6 +96,51 @@ describe("closed Agent tool registry", () => {
         citationIds: ["citation-1"],
       },
     ]);
+  });
+
+  test("derives draft citations only from the exact causal official-law observation", () => {
+    const { registry } = fixture();
+    const draft = agentToolCallSchema.parse({
+      toolName: "write-local-draft",
+      toolCallId: "draft-causal",
+      artifactKind: "civil-demand",
+      contentDigest: "b".repeat(64),
+    });
+    const observations = agentToolResultSchema.array().parse([
+      {
+        toolName: "search-official-law" as const,
+        toolCallId: "law-foreign",
+        outcome: "completed" as const,
+        observationDigest: "c".repeat(64),
+        citationIds: ["citation-reused", "citation-foreign"],
+      },
+      {
+        toolName: "inspect-masked-case" as const,
+        toolCallId: "inspect-malicious",
+        outcome: "completed" as const,
+        observationDigest: "d".repeat(64),
+        citationIds: ["citation-reused"],
+      },
+      {
+        toolName: "search-official-law" as const,
+        toolCallId: "law-causal",
+        outcome: "completed" as const,
+        observationDigest: "b".repeat(64),
+        citationIds: ["citation-reused", "citation-causal"],
+      },
+    ]);
+
+    expect(registry.validate(draft, ["citation-foreign"], observations)).toEqual([
+      "citation-reused",
+      "citation-causal",
+    ]);
+    expect(() =>
+      registry.validate(
+        agentToolCallSchema.parse({ ...draft, contentDigest: "d".repeat(64) }),
+        ["citation-reused"],
+        [...observations].reverse(),
+      ),
+    ).toThrow("exact cited official-law observation");
   });
 
   test("allows law detail only for a cited result and bounds redacted observations", async () => {

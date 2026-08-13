@@ -1,5 +1,5 @@
 import type { RedactedText } from "../../security/redaction";
-import { type AgentToolCall, agentToolCallSchema } from "./agent-contracts";
+import { type AgentToolCall, type AgentToolResult, agentToolCallSchema } from "./agent-contracts";
 import { AgentToolPolicyError } from "./agent-loop-errors";
 import type { AgentCaseProjection } from "./agent-loop-types";
 import { type PreparedAgentObservation, prepareAgentObservation } from "./agent-tool-observation";
@@ -88,37 +88,47 @@ export class AgentToolRegistry {
   validate(
     call: AgentToolCall,
     approvedCitationIds: readonly string[],
-    approvedObservationDigests: readonly string[] = [],
-  ): void {
+    approvedObservations: readonly AgentToolResult[] = [],
+  ): readonly string[] {
+    const completedObservation = (digest: string) =>
+      approvedObservations.find(
+        (result) => result.outcome === "completed" && result.observationDigest === digest,
+      );
     switch (call.toolName) {
       case "inspect-masked-case":
       case "compute-evidence-gaps":
       case "request-user-input":
       case "request-user-action":
-        return;
+        return [];
       case "search-official-law":
         if (
           call.basisObservationDigest !== undefined &&
-          !approvedObservationDigests.includes(call.basisObservationDigest)
+          completedObservation(call.basisObservationDigest) === undefined
         ) {
           throw new AgentToolPolicyError(
             "Official-law search basis must be a completed observation",
           );
         }
-        return;
+        return [];
       case "read-official-law-detail":
         if (!approvedCitationIds.includes(call.citationId)) {
           throw new AgentToolPolicyError("Official-law detail requires a cited result");
         }
-        return;
-      case "write-local-draft":
-        if (!approvedObservationDigests.includes(call.contentDigest)) {
-          throw new AgentToolPolicyError("Local drafts require a completed observation");
+        return [];
+      case "write-local-draft": {
+        const source = completedObservation(call.contentDigest);
+        if (
+          source === undefined ||
+          (source.toolName !== "search-official-law" &&
+            source.toolName !== "read-official-law-detail") ||
+          source.citationIds.length === 0
+        ) {
+          throw new AgentToolPolicyError(
+            "Local drafts require an exact cited official-law observation",
+          );
         }
-        if (approvedCitationIds.length === 0) {
-          throw new AgentToolPolicyError("Local drafts require an official citation");
-        }
-        return;
+        return source.citationIds;
+      }
     }
   }
 
@@ -126,7 +136,7 @@ export class AgentToolRegistry {
     caseId: string,
     call: AgentToolCall,
     projection: AgentCaseProjection,
-    approvedCitationIds: readonly string[] = projection.citationIds,
+    sourceCitationIds: readonly string[] = [],
   ): Promise<AgentToolExecution> {
     switch (call.toolName) {
       case "inspect-masked-case":
@@ -156,7 +166,7 @@ export class AgentToolRegistry {
           citationIds: [],
         };
       case "write-local-draft":
-        return this.#writeDraft(caseId, call, projection, approvedCitationIds);
+        return this.#writeDraft(caseId, call, projection, sourceCitationIds);
       case "request-user-input":
         return {
           status: "pending",

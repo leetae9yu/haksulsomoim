@@ -66,8 +66,10 @@ describe("host-owned Agent tool correlations", () => {
       const selected = decisions[index];
       if (selected === undefined) throw new Error("missing deterministic decision");
       if (selected.kind === "tool" && selected.toolCall.toolName === "write-local-draft") {
-        const observation = input.observations[0];
-        if (observation === undefined) throw new Error("missing approved observation");
+        const observation = input.observations.find(
+          (candidate) => candidate.toolName === "search-official-law",
+        );
+        if (observation === undefined) throw new Error("missing cited law observation");
         return {
           ...selected,
           toolCall: { ...selected.toolCall, contentDigest: observation.observationDigest },

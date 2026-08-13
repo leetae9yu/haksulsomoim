@@ -51,6 +51,7 @@ export function prepareAgentObservation(
       toolCallId: call.toolCallId,
       outcome,
       observationDigest,
+      citationIds: execution.citationIds,
       ...(artifactId === undefined ? {} : { artifactId }),
     }),
   };

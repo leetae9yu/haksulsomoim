@@ -82,6 +82,12 @@ const toolResult = <TToolName extends AgentToolCall["toolName"]>(toolName: TTool
       toolCallId: agentToolCallIdSchema,
       outcome: z.union([z.literal("completed"), z.literal("unavailable"), z.literal("rejected")]),
       observationDigest: observationDigestSchema,
+      citationIds: z
+        .array(koreanLawCitationIdSchema)
+        .max(24)
+        .refine((ids) => new Set(ids).size === ids.length)
+        .default([])
+        .readonly(),
     })
     .readonly();
 const draftToolResultSchema = toolResult("write-local-draft")

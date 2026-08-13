@@ -112,7 +112,7 @@ export class AgentLoopRunner {
         this.#control.caseId,
         accepted.call,
         accepted.projection,
-        [...this.#control.citationIds],
+        accepted.citationIds,
       );
       if (this.#stopping()) return this.#stoppedRun();
       const observation = this.#dependencies.tools.prepareObservation(
