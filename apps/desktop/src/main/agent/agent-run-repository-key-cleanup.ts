@@ -5,13 +5,18 @@ import { dirname, join } from "node:path";
 
 const QUARANTINE_PREFIX = ".haksulsomoim-agent-repository-cleanup.";
 const QUARANTINE_ENTRY = "entry";
+const QUARANTINE_SOURCE_PROOF = "source-proof";
 const MAX_QUARANTINE_ATTEMPTS = 8;
 const TOKEN_PATTERN = /^[a-f0-9]{32}$/u;
 
 export type AgentRepositoryTemporaryIdentity = Readonly<{ dev: number; ino: number }>;
 
 export type AgentRepositoryKeyCleanupCheckpoint = Readonly<{
-  phase: "before-entry-capture" | "before-no-replace-capture" | "after-entry-captured";
+  phase:
+    | "before-entry-capture"
+    | "before-no-replace-capture"
+    | "before-source-release"
+    | "after-entry-captured";
   sourcePath: string;
   quarantinePath: string;
 }>;
@@ -21,7 +26,7 @@ export type AgentRepositoryKeyCleanupControl = Readonly<{
   token?: () => string;
 }>;
 
-type Quarantine = Readonly<{ directory: string; entry: string }>;
+type Quarantine = Readonly<{ directory: string; entry: string; sourceProof: string }>;
 
 type AgentRepositoryKeyCleanupPlatform = Readonly<{
   captureNoReplace(sourcePath: string, destinationPath: string): Promise<void>;
@@ -68,7 +73,11 @@ async function createQuarantine(
     const directory = join(parent, `${QUARANTINE_PREFIX}${token}`);
     try {
       await mkdir(directory, { mode: 0o700 });
-      return { directory, entry: join(directory, QUARANTINE_ENTRY) };
+      return {
+        directory,
+        entry: join(directory, QUARANTINE_ENTRY),
+        sourceProof: join(directory, QUARANTINE_SOURCE_PROOF),
+      };
     } catch (error) {
       if (isNodeError(error, "EEXIST")) continue;
       throw cleanupError("Agent repository cleanup quarantine creation failed", directory, error);
@@ -110,34 +119,31 @@ function matchesOwnedFile(
   return metadata.isFile() && metadata.dev === identity.dev && metadata.ino === identity.ino;
 }
 
-async function openCapturedOwnedEntry(
-  quarantine: Quarantine,
+async function openOwnedEntry(
+  path: string,
+  reportedPath: string,
   identity: AgentRepositoryTemporaryIdentity,
 ): Promise<Awaited<ReturnType<typeof open>>> {
   let file: Awaited<ReturnType<typeof open>>;
   try {
-    file = await open(quarantine.entry, constants.O_RDONLY | constants.O_NOFOLLOW);
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (error) {
     throw cleanupError(
-      "Agent repository quarantined temporary is not a safe file",
-      quarantine.entry,
+      "Agent repository quarantined entry is not a safe file",
+      reportedPath,
       error,
     );
   }
   try {
-    const [opened, linked] = await Promise.all([file.stat(), lstat(quarantine.entry)]);
+    const [opened, linked] = await Promise.all([file.stat(), lstat(path)]);
     if (!matchesOwnedFile(opened, identity) || !matchesOwnedFile(linked, identity)) {
-      throw cleanupError("Agent repository quarantined temporary is not owned", quarantine.entry);
+      throw cleanupError("Agent repository quarantined entry is not owned", reportedPath);
     }
     return file;
   } catch (error) {
     await file.close();
     if (error instanceof AgentRepositoryKeyCleanupError) throw error;
-    throw cleanupError(
-      "Agent repository quarantined temporary identity check failed",
-      quarantine.entry,
-      error,
-    );
+    throw cleanupError("Agent repository quarantined identity check failed", reportedPath, error);
   }
 }
 
@@ -147,9 +153,24 @@ async function removeCapturedOwnedEntry(
   identity: AgentRepositoryTemporaryIdentity,
   control: AgentRepositoryKeyCleanupControl,
 ): Promise<void> {
-  const file = await openCapturedOwnedEntry(quarantine, identity);
+  const captured = await openOwnedEntry(quarantine.entry, quarantine.entry, identity);
+  let sourceProof: Awaited<ReturnType<typeof open>> | undefined;
   try {
+    await control.checkpoint?.({
+      phase: "before-source-release",
+      sourcePath,
+      quarantinePath: quarantine.entry,
+    });
+    try {
+      await hardLinkCleanupPlatform.captureNoReplace(sourcePath, quarantine.sourceProof);
+    } catch (error) {
+      throw cleanupError("Agent repository source identity proof failed", quarantine.entry, error);
+    }
+    sourceProof = await openOwnedEntry(quarantine.sourceProof, quarantine.entry, identity);
     await unlink(sourcePath);
+    await unlink(quarantine.sourceProof);
+    await sourceProof.close();
+    sourceProof = undefined;
     await control.checkpoint?.({
       phase: "after-entry-captured",
       sourcePath,
@@ -171,7 +192,8 @@ async function removeCapturedOwnedEntry(
       error,
     );
   } finally {
-    await file.close();
+    await sourceProof?.close();
+    await captured.close();
   }
   try {
     await rmdir(quarantine.directory);
