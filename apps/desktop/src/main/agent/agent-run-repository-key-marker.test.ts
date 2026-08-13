@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -98,7 +98,9 @@ describe("Agent repository key marker", () => {
   });
 
   test("allows exactly one key across a child-process first-open race", async () => {
-    const directory = await root();
+    const parent = await root();
+    const directory = join(parent, "repository");
+    await mkdir(directory, { mode: 0o700 });
     const receipts = await Promise.all([childOpen(directory, 54), childOpen(directory, 55)]);
     const winner = receipts.find((receipt) => receipt.status === "ok");
     const loser = receipts.find((receipt) => receipt.status !== "ok");
@@ -110,6 +112,7 @@ describe("Agent repository key marker", () => {
       "AGENT_REPOSITORY_KEY_MISMATCH",
     );
     expect(await readdir(directory)).toEqual([MARKER]);
+    expect(await readdir(parent)).toEqual(["repository"]);
   });
 
   for (const corruption of [

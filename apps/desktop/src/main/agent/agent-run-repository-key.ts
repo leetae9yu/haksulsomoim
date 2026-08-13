@@ -1,15 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { link, mkdir, open, readdir, readFile, realpath, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { link, lstat, mkdir, open, readdir, readFile, realpath, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 export const AGENT_REPOSITORY_KEY_MARKER = ".agent-repository-key";
-const TEMPORARY_MARKER_PREFIX = `${AGENT_REPOSITORY_KEY_MARKER}.`;
+const TEMPORARY_MARKER_PREFIX = ".haksulsomoim-agent-repository-key.";
 const markerSchema = z.strictObject({
   version: z.literal(1),
   verifier: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 const verificationTails = new Map<string, Promise<void>>();
+
+type FileIdentity = Readonly<{ dev: number; ino: number }>;
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
@@ -62,8 +64,7 @@ export class AgentRepositoryKeyVerifier {
       await this.#readAndVerify();
       return;
     }
-    const unexpected = entries.filter((name) => !name.startsWith(TEMPORARY_MARKER_PREFIX));
-    if (unexpected.length > 0) {
+    if (entries.length > 0) {
       throw new AgentRepositoryKeyMarkerError(
         "Agent repository key marker is missing from a nonempty repository",
       );
@@ -100,30 +101,61 @@ export class AgentRepositoryKeyVerifier {
   async #publish(): Promise<void> {
     const serialized = JSON.stringify({ version: 1, verifier: this.#verifier() });
     const temporaryPath = join(
-      this.#directory,
+      dirname(this.#directory),
       `${TEMPORARY_MARKER_PREFIX}${randomBytes(12).toString("hex")}.tmp`,
     );
+    let identity: FileIdentity | undefined;
     let published = false;
     try {
       const file = await open(temporaryPath, "wx", 0o600);
       try {
+        const metadata = await file.stat();
+        identity = { dev: metadata.dev, ino: metadata.ino };
         await file.writeFile(serialized, "utf8");
         await file.sync();
       } finally {
         await file.close();
       }
+      await this.#assertOwnedTemporary(temporaryPath, identity);
       try {
         await link(temporaryPath, this.#path());
         published = true;
       } catch (error) {
         if (!isNodeError(error, "EEXIST")) throw error;
       }
-      await unlink(temporaryPath);
+      await this.#unlinkOwnedTemporary(temporaryPath, identity);
       if (published) await this.#syncDirectory();
     } catch (error) {
-      await unlink(temporaryPath).catch(() => undefined);
+      if (identity === undefined) throw error;
+      try {
+        await this.#unlinkOwnedTemporary(temporaryPath, identity);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Agent repository key marker publication cleanup failed",
+        );
+      }
       throw error;
     }
+  }
+
+  async #assertOwnedTemporary(path: string, identity: FileIdentity): Promise<void> {
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
+      throw new AgentRepositoryKeyMarkerError(
+        "Agent repository key marker temporary ownership changed",
+      );
+    }
+  }
+
+  async #unlinkOwnedTemporary(path: string, identity: FileIdentity): Promise<void> {
+    try {
+      await this.#assertOwnedTemporary(path, identity);
+    } catch (error) {
+      if (isNodeError(error, "ENOENT")) return;
+      throw error;
+    }
+    await unlink(path);
   }
 
   #verifier(): string {
