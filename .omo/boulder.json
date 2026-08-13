@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "active_work_id": "autonomous-legal-case-agent",
+  "works": {
+    "autonomous-legal-case-agent": {
+      "work_id": "autonomous-legal-case-agent",
+      "active_plan": ".omo/plans/autonomous-legal-case-agent.md",
+      "plan_name": "autonomous-legal-case-agent",
+      "session_ids": [
+        "senpi:019ff0f2-fafe-71a5-b760-d3cdf74df342"
+      ],
+      "status": "completed",
+      "ended_at": "2026-08-13T23:25:01Z",
+      "updated_at": "2026-08-13T23:25:01Z",
+      "worktree_path": null
+    }
+  }
+}

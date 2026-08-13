@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "audit": "closeout-state-synchronization",
+  "capturedAt": "2026-08-13T23:25:01Z",
+  "sourceHead": "7e93772bdb662f67b7b4ce49fef763a5c0db0f43",
+  "result": "PASS",
+  "deliveryMode": "direct delivery",
+  "pullRequestRequired": false,
+  "mergeRequired": false,
+  "ledger": {
+    "jsonlLines": 94,
+    "validJsonLines": 94,
+    "invalidJsonLines": 0,
+    "commitReferences": 101,
+    "uniqueResolvedCommits": 43,
+    "invalidCommitReferences": [],
+    "concreteEvidencePathReferences": 96,
+    "missingConcreteEvidencePaths": [],
+    "historicalDispatchTemplates": [
+      {
+        "line": 5,
+        "field": "artifact",
+        "path": ".omo/evidence/autonomous-legal-case-agent/task-{2,3}/",
+        "classification": "historical dispatch template; concrete downstream evidence paths are separately recorded"
+      },
+      {
+        "line": 39,
+        "field": "artifact",
+        "path": ".omo/evidence/autonomous-legal-case-agent/task-4/windows-native-prune-{red,green}/",
+        "classification": "historical dispatch template; concrete downstream evidence paths are separately recorded"
+      },
+      {
+        "line": 41,
+        "field": "artifact",
+        "path": ".omo/evidence/autonomous-legal-case-agent/task-{5,6}/",
+        "classification": "historical dispatch template; concrete downstream evidence paths are separately recorded"
+      },
+      {
+        "line": 51,
+        "field": "artifact",
+        "path": ".omo/evidence/autonomous-legal-case-agent/task-{7,8}/",
+        "classification": "historical dispatch template; concrete downstream evidence paths are separately recorded"
+      }
+    ]
+  },
+  "checkboxMatrix": {
+    "1": {
+      "checked": true,
+      "title": "Define the closed Agent domain and boundary contracts"
+    },
+    "2": {
+      "checked": true,
+      "title": "Persist encrypted Agent runs with crash-safe checkpoints"
+    },
+    "3": {
+      "checked": true,
+      "title": "Upgrade Codex from one-shot suggestions to typed next decisions"
+    },
+    "4": {
+      "checked": true,
+      "title": "Implement the host-owned bounded Agent loop and tool policy"
+    },
+    "5": {
+      "checked": true,
+      "title": "Expose Agent lifecycle through secure typed IPC"
+    },
+    "6": {
+      "checked": true,
+      "title": "Wire Agent services into runtime lifecycle and recovery"
+    },
+    "7": {
+      "checked": true,
+      "title": "Replace the optional suggestion panel with an Agent workspace"
+    },
+    "8": {
+      "checked": true,
+      "title": "Prove privacy, adversarial policy, cancellation, and provider recovery"
+    },
+    "9": {
+      "checked": true,
+      "title": "Extend real Electron QA and Windows release packaging"
+    },
+    "F1": {
+      "checked": true,
+      "title": "Goal and plan compliance audit"
+    },
+    "F2": {
+      "checked": true,
+      "title": "Code quality, security, and privacy review"
+    },
+    "F3": {
+      "checked": true,
+      "title": "Real Electron and integration QA"
+    },
+    "F4": {
+      "checked": true,
+      "title": "Scope fidelity and release audit"
+    }
+  },
+  "checkboxSummary": {
+    "checked": 13,
+    "total": 13,
+    "remaining": 0,
+    "duplicates": false
+  },
+  "approvals": {
+    "F1": {
+      "commit": "df7fb086d582bd4f02545a4ba8dbea052feaaef9",
+      "verdict": "APPROVE",
+      "evidence": ".omo/evidence/autonomous-legal-case-agent/final/f1/reaudit-verdict.json"
+    },
+    "F2": {
+      "commit": "b24b7328236b5ce0e1388ef52853a80b8cc02475",
+      "verdict": "APPROVE",
+      "evidence": ".omo/evidence/autonomous-legal-case-agent/final/f2/decisive-final-verdict.json"
+    },
+    "F3": {
+      "commit": "35937421a10d6747ac977e6b859a36c42cbf8041",
+      "verdict": "APPROVE",
+      "evidence": ".omo/evidence/autonomous-legal-case-agent/final/f3/decisive-verdict.json"
+    },
+    "F4": {
+      "commit": "7e93772bdb662f67b7b4ce49fef763a5c0db0f43",
+      "verdict": "APPROVE",
+      "evidence": ".omo/evidence/autonomous-legal-case-agent/final/f4/absolute-final-verdict.json"
+    }
+  },
+  "artifact": {
+    "path": "apps/desktop/dist/small-fraud-agent-0.1.0-x64-setup.exe",
+    "sha256": "1d4893297c590644fa2b9fbbc2f731e1773a2b068b635382e70dafc92351d8c3",
+    "bytes": 280418610,
+    "type": "regular file",
+    "symlink": false,
+    "links": 1,
+    "mode": "0600",
+    "owner": "opc:opc",
+    "uid": 1000,
+    "gid": 1000,
+    "sidecarSha256": "1d4893297c590644fa2b9fbbc2f731e1773a2b068b635382e70dafc92351d8c3",
+    "identityMatchesApproved": true
+  },
+  "boulder": {
+    "schema_version": 2,
+    "active_work_id": "autonomous-legal-case-agent",
+    "works": {
+      "autonomous-legal-case-agent": {
+        "work_id": "autonomous-legal-case-agent",
+        "active_plan": ".omo/plans/autonomous-legal-case-agent.md",
+        "plan_name": "autonomous-legal-case-agent",
+        "session_ids": [
+          "senpi:019ff0f2-fafe-71a5-b760-d3cdf74df342"
+        ],
+        "status": "completed",
+        "ended_at": "2026-08-13T23:25:01Z",
+        "updated_at": "2026-08-13T23:25:01Z",
+        "worktree_path": null
+      }
+    }
+  },
+  "git": {
+    "statusBeforeReportCreation": [
+      " M .omo/start-work/ledger.jsonl"
+    ],
+    "baselineSourceHeadWasClean": true,
+    "productPathsChanged": false,
+    "expectedAtomicPaths": [
+      ".omo/boulder.json",
+      ".omo/evidence/autonomous-legal-case-agent/closeout/state-synchronization.json",
+      ".omo/evidence/autonomous-legal-case-agent/closeout/state-synchronization.md",
+      ".omo/plans/autonomous-legal-case-agent.md",
+      ".omo/start-work/ledger.jsonl"
+    ]
+  },
+  "processAudit": {
+    "matchingProductAuditProcesses": [],
+    "clean": true
+  },
+  "tempAudit": {
+    "removed": [
+      "/tmp/haksul-f4-extract-JdV6ql",
+      "/tmp/haksul-f4-extract-vDd0p0",
+      "/tmp/f4-nsis.log"
+    ],
+    "auditOwnedResidueRemaining": [],
+    "preExistingSharedResidueNotOwnedOrTouched": [
+      "/tmp/debug-electron",
+      "/tmp/electron-download-*",
+      "/tmp/st019ff6b7-*"
+    ]
+  },
+  "authoritativeState": {
+    "stalePendingAmbiguous": false,
+    "historicalRejectedAndPendingRetained": true,
+    "laterApprovalRecordsSupersedeHistoricalState": true,
+    "onlyCurrentDeliverySha256": "1d4893297c590644fa2b9fbbc2f731e1773a2b068b635382e70dafc92351d8c3"
+  }
+}
