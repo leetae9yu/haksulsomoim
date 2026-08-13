@@ -3,7 +3,8 @@ export type CodexAppServerMethod =
   | "account/read"
   | "account/login/start"
   | "thread/start"
-  | "turn/start";
+  | "turn/start"
+  | "turn/interrupt";
 
 export type CodexAppServerRequest = Readonly<{
   method: CodexAppServerMethod;

@@ -1,6 +1,6 @@
-import type { AgentProviderState, CodexAgentProvider } from "./agent-provider";
+import type { AgentProviderState, CodexAgentDecisionProvider } from "./agent-provider";
 
-export class UnavailableCodexAgentProvider implements CodexAgentProvider {
+export class UnavailableCodexAgentProvider implements CodexAgentDecisionProvider {
   readonly state: AgentProviderState;
 
   constructor(detail: string) {
@@ -15,6 +15,12 @@ export class UnavailableCodexAgentProvider implements CodexAgentProvider {
   async startChatGptLogin(): Promise<never> {
     throw new Error("The official Codex binary is unavailable; use manual mode");
   }
+
+  async nextDecision(_input: unknown): Promise<never> {
+    throw new Error("The official Codex binary is unavailable; use manual mode");
+  }
+
+  async interrupt(): Promise<void> {}
 
   async suggest(_input: unknown): Promise<never> {
     throw new Error("The official Codex binary is unavailable; use manual mode");

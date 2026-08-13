@@ -1,4 +1,7 @@
+import type { AgentDecision } from "../../main/agent/agent-contracts";
 import { sanitizeSecret } from "../../security/redaction";
+import type { ApprovedAgentDecisionContext } from "./agent-decision-contracts";
+import { AgentDecisionSession, type ProviderTimer, systemTimer } from "./agent-decision-session";
 import { type ChatGptAccount, readChatGptAccount } from "./codex-account";
 import type {
   CodexAppServerConnection,
@@ -14,6 +17,8 @@ import {
 } from "./suggestion-contracts";
 import { UnavailableCodexAgentProvider } from "./unavailable-provider";
 
+export type { ApprovedAgentDecisionContext } from "./agent-decision-contracts";
+export type { ProviderTimer } from "./agent-decision-session";
 export type { ChatGptAccount } from "./codex-account";
 export type {
   CodexAppServerConnection,
@@ -49,6 +54,11 @@ export interface CodexAgentProvider {
   dispose(): Promise<void>;
 }
 
+export interface CodexAgentDecisionProvider extends CodexAgentProvider {
+  nextDecision(input: ApprovedAgentDecisionContext): Promise<AgentDecision>;
+  interrupt(): Promise<void>;
+}
+
 const SIGN_IN_REQUIRED: AgentProviderState = Object.freeze({
   status: "sign-in-required",
   action: "sign-in-with-chatgpt",
@@ -57,13 +67,15 @@ const SIGN_IN_REQUIRED: AgentProviderState = Object.freeze({
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-class AvailableCodexAgentProvider implements CodexAgentProvider {
+class AvailableCodexAgentProvider implements CodexAgentDecisionProvider {
   #state: AgentProviderState = SIGN_IN_REQUIRED;
   readonly #connection: CodexAppServerConnection;
+  readonly #decisions: AgentDecisionSession;
   readonly #unsubscribe: () => void;
 
-  constructor(connection: CodexAppServerConnection) {
+  constructor(connection: CodexAppServerConnection, timer: ProviderTimer) {
     this.#connection = connection;
+    this.#decisions = new AgentDecisionSession(connection, { timer, deadlineMs: 30_000 });
     this.#unsubscribe = connection.onNotification((notification) =>
       this.#handleAccountNotification(notification),
     );
@@ -113,6 +125,17 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
       throw new Error("Codex ChatGPT authorization URL must use an official OpenAI auth host");
     }
     return Object.freeze({ loginId: response.loginId, authorizationUrl: authorizationUrl.href });
+  }
+
+  async nextDecision(input: ApprovedAgentDecisionContext): Promise<AgentDecision> {
+    if (this.#state.status !== "authenticated") {
+      throw new Error("ChatGPT sign-in is required before requesting an Agent decision");
+    }
+    return this.#decisions.nextDecision(input);
+  }
+
+  async interrupt(): Promise<void> {
+    await this.#decisions.interrupt();
   }
 
   async suggest(input: UserApprovedSuggestionInput): Promise<AgentSuggestion> {
@@ -195,6 +218,7 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
   }
 
   async dispose(): Promise<void> {
+    this.#decisions.dispose();
     this.#unsubscribe();
     await this.#connection.close();
   }
@@ -226,12 +250,16 @@ class AvailableCodexAgentProvider implements CodexAgentProvider {
 
 export const createCodexAgentProvider = async (
   launchAppServer: CodexAppServerLauncher,
-): Promise<CodexAgentProvider> => {
+  options: Readonly<{ timer?: ProviderTimer }> = {},
+): Promise<CodexAgentDecisionProvider> => {
   const started = await launchAppServer();
   if (started.status === "binary-unavailable") {
     return new UnavailableCodexAgentProvider(sanitizeSecret(started.reason, process.env.LAW_OC));
   }
-  const provider = new AvailableCodexAgentProvider(started.connection);
+  const provider = new AvailableCodexAgentProvider(
+    started.connection,
+    options.timer ?? systemTimer,
+  );
   try {
     await provider.initialize();
     return provider;
