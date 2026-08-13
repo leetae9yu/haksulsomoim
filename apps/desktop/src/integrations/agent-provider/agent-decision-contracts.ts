@@ -7,7 +7,7 @@ import {
   agentGoalSchema,
   agentToolResultSchema,
 } from "../../main/agent/agent-contracts";
-import type { RedactedText } from "../../security/redaction";
+import { containsDirectIdentifier, type RedactedText } from "../../security/redaction";
 
 export type ApprovedAgentDecisionContext = Readonly<{
   approval: "user-approved";
@@ -55,6 +55,7 @@ export function parseApprovedDecisionContext(input: ApprovedAgentDecisionContext
       !ID.test(fact.id) ||
       typeof fact.text !== "string" ||
       fact.text.length === 0 ||
+      containsDirectIdentifier(fact.text) ||
       factIds.has(fact.id)
     ) {
       throw new Error("Agent context contains invalid or duplicate masked fact IDs");
@@ -99,7 +100,10 @@ export function parseAgentDecision(
   } catch {
     throw new Error("Codex returned an invalid structured Agent decision");
   }
-  const result = agentDecisionSchema.safeParse(parsed);
+  const normalized = record(parsed)
+    ? Object.fromEntries(Object.entries(parsed).filter(([, value]) => value !== null))
+    : parsed;
+  const result = agentDecisionSchema.safeParse(normalized);
   if (!result.success) throw new Error("Codex returned an invalid structured Agent decision");
   const decision = result.data;
   if (decision.kind === "tool") {
@@ -131,9 +135,36 @@ export function parseAgentDecision(
   return decision;
 }
 
+function supportedOutputSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(supportedOutputSchema);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key === "oneOf" ? "anyOf" : key,
+      supportedOutputSchema(item),
+    ]),
+  );
+}
+
 const generatedSchema = z.toJSONSchema(agentDecisionSchema) as Record<string, unknown>;
-const { $schema: _draft, ...documentedSchema } = generatedSchema;
+const variants = generatedSchema.oneOf;
+if (!Array.isArray(variants) || !variants.every(record)) {
+  throw new Error("Agent decision schema must contain closed variants");
+}
+const variantProperties = variants.map((variant) => variant.properties).filter(record);
+const property = (name: string) => variantProperties.map((item) => item[name]).find(Boolean);
+const nullable = (name: string) => ({
+  anyOf: [supportedOutputSchema(property(name)), { type: "null" }],
+});
 export const AGENT_DECISION_OUTPUT_SCHEMA = Object.freeze({
-  ...documentedSchema,
   type: "object",
+  properties: {
+    kind: { type: "string", enum: ["tool", "request-approval", "finish"] },
+    decisionId: supportedOutputSchema(property("decisionId")),
+    toolCall: nullable("toolCall"),
+    approval: nullable("approval"),
+    outcome: nullable("outcome"),
+  },
+  required: ["kind", "decisionId", "toolCall", "approval", "outcome"],
+  additionalProperties: false,
 });

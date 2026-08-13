@@ -9,7 +9,6 @@ import {
   type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { sanitizeSecret } from "../../security/redaction";
 import { parseKoreanLawCitations } from "./citation-parser";
 
 export const ALLOWED_KOREAN_LAW_TOOLS = [
@@ -136,13 +135,6 @@ function discoveredToolNames(value: unknown): readonly KoreanLawToolName[] {
   return ALLOWED_KOREAN_LAW_TOOLS.filter((name) => names.has(name));
 }
 
-function safeErrorMessage(error: unknown, credential: string | undefined): string {
-  if (error instanceof Error && error.message.trim() !== "") {
-    return sanitizeSecret(error.message, credential);
-  }
-  return "Korean law MCP tool execution failed";
-}
-
 export function createKoreanLawMcpAdapter(
   options: CreateKoreanLawMcpAdapterOptions = {},
 ): KoreanLawMcpAdapter {
@@ -194,7 +186,7 @@ export function createKoreanLawMcpAdapter(
 
     async execute(tool, arguments_) {
       if (!ALLOWED_TOOL_NAMES.has(tool)) {
-        return { ok: false, error: { code: "tool_not_allowed", tool } };
+        return { ok: false, error: { code: "tool_not_allowed", tool: "[REJECTED]" } };
       }
       if (credential === undefined || credential === "") {
         return {
@@ -227,13 +219,13 @@ export function createKoreanLawMcpAdapter(
         }
 
         return { ok: true, value };
-      } catch (error) {
+      } catch {
         return {
           ok: false,
           error: {
             code: "execution_failed",
             tool: toolName,
-            message: safeErrorMessage(error, credential),
+            message: "Korean law MCP tool execution failed",
           },
         };
       }

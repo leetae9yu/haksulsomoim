@@ -15,6 +15,31 @@ function readString(object: ObjectValue, keys: readonly string[]): string | unde
   return undefined;
 }
 
+function hasUnsafeMetadataCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code <= 0x1f ||
+      code === 0x7f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    );
+  });
+}
+
+function safeLawName(value: string): boolean {
+  return value.length <= 1_000 && !hasUnsafeMetadataCharacter(value) && !value.includes("://");
+}
+
+function safeVersionDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value);
+}
+
+function safeRetrievalTime(value: string): boolean {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
 const OFFICIAL_KOREAN_LAW_ORIGINS = new Set(["https://law.go.kr", "https://www.law.go.kr"]);
 
 function citationId(
@@ -75,8 +100,8 @@ function deriveOfficialLawCitation(
   const lawName = /^법령명:\s*(.+)$/mu.exec(text)?.[1]?.trim();
   const effectiveDate = /^시행일:\s*(\d{8})$/mu.exec(text)?.[1];
   const versionDate = effectiveDate === undefined ? undefined : formatBasicDate(effectiveDate);
-  if (lawName === undefined || lawName.length === 0) return undefined;
-  if (versionDate === undefined) return undefined;
+  if (lawName === undefined || !safeLawName(lawName)) return undefined;
+  if (versionDate === undefined || !safeRetrievalTime(retrievedAt)) return undefined;
   const sourceUrl = `https://www.law.go.kr/법령/${lawName}`;
 
   return {
@@ -119,6 +144,9 @@ export function parseKoreanLawCitations(
     const retrievedAt =
       readString(candidate, ["retrievedAt", "retrievalTime", "retrieval_time", "retrieved_at"]) ??
       fallbackRetrievalTime;
+    if (!safeLawName(law) || !safeVersionDate(versionDate) || !safeRetrievalTime(retrievedAt)) {
+      continue;
+    }
     citations.push({
       citationId: citationId(resultDigest, sourceUrl, law, versionDate, retrievedAt, toolName),
       sourceUrl,

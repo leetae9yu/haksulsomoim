@@ -61,6 +61,31 @@ describe("Korean law citation parsing", () => {
     ).toEqual(["https://www.law.go.kr/법령/민법", "https://law.go.kr/법령/민법"]);
   });
 
+  test("rejects malicious official-looking URLs and unsafe provenance metadata", () => {
+    const rawResult = {
+      citations: [
+        {
+          sourceUrl: "https://www.law.go.kr.evil.example/법령/민법",
+          law: "민법",
+          versionDate: "2025-01-01",
+        },
+        {
+          sourceUrl: "https://www.law.go.kr/법령/민법",
+          law: "민법\nhttps://evil.example",
+          versionDate: "2025-01-01",
+        },
+        {
+          sourceUrl: "https://www.law.go.kr/법령/민법",
+          law: "민법",
+          versionDate: "2025-01-01",
+          retrievedAt: "not-a-timestamp /home/private",
+        },
+      ],
+    };
+
+    expect(parseKoreanLawCitations(rawResult, "search_law", digest(rawResult), now)).toEqual([]);
+  });
+
   test("collapses repeated provenance to one canonical identity", () => {
     const repeated = {
       sourceUrl: "https://www.law.go.kr/법령/민법",

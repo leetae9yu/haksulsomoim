@@ -1,9 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import {
-  createCodexAgentProvider,
-  createUserApprovedSuggestionInput,
-} from "../src/integrations/agent-provider/agent-provider";
+import type { ApprovedAgentDecisionContext } from "../src/integrations/agent-provider/agent-provider";
+import { createCodexAgentProvider } from "../src/integrations/agent-provider/agent-provider";
 import { launchCodexAppServer } from "../src/integrations/agent-provider/codex-app-server-launcher";
 import { Redactor, sanitizeSecret } from "../src/security/redaction";
 
@@ -19,23 +17,45 @@ function evidenceDirectory(arguments_: readonly string[]): string {
 const outputDirectory = evidenceDirectory(process.argv.slice(2));
 const started = await launchCodexAppServer();
 const provider = await createCodexAgentProvider(async () => started);
+let structuredDecision: Readonly<{ kind: string; approvedTool?: string; valid: true }> | undefined;
+let decisionFailure: "structured-decision-failed" | undefined;
 
-let suggestion: Readonly<{ text: string; citationIds: readonly string[] }> | undefined;
-if (provider.state.status === "authenticated") {
-  const redactor = new Redactor(new Uint8Array(32).fill(0x41));
-  const input = createUserApprovedSuggestionInput(
-    [
-      {
-        id: "fact-amount",
-        text: redactor.redact(
-          "qa-agent-provider",
-          "피해금은 110-123-456789 계좌로 송금한 5,380,000원이다.",
-        ),
+try {
+  if (provider.state.status === "authenticated") {
+    const redactor = new Redactor(new Uint8Array(32).fill(0x41));
+    const context = Object.freeze({
+      approval: "user-approved",
+      contextDigest: "a".repeat(64),
+      goal: {
+        kind: "civil-recovery",
+        caseId: "qa-agent-provider",
+        objective: "prepare-civil-demand",
       },
-    ],
-    ["law-civil-procedure"],
-  );
-  suggestion = await provider.suggest(input);
+      maskedFacts: Object.freeze([
+        {
+          id: "fact-amount",
+          text: redactor.redact(
+            "qa-agent-provider",
+            "sender: 홍길동, claimant@example.com, 110-123-456789 계좌로 5,380,000원 송금",
+          ),
+        },
+      ]),
+      citationIds: Object.freeze([]),
+      observations: Object.freeze([]),
+    }) as unknown as ApprovedAgentDecisionContext;
+    try {
+      const decision = await provider.nextDecision(context);
+      structuredDecision = Object.freeze({
+        kind: decision.kind,
+        ...(decision.kind === "tool" ? { approvedTool: decision.toolCall.toolName } : {}),
+        valid: true as const,
+      });
+    } catch {
+      decisionFailure = "structured-decision-failed";
+    }
+  }
+} finally {
+  await provider.dispose();
 }
 
 const state =
@@ -46,35 +66,27 @@ const state =
         planType: provider.state.account.planType,
       }
     : provider.state;
-const passed =
-  (provider.state.status === "authenticated" &&
-    suggestion !== undefined &&
-    suggestion.text.length > 0) ||
+const recoverable =
   (provider.state.status === "sign-in-required" &&
     provider.state.action === "sign-in-with-chatgpt") ||
   (provider.state.status === "unavailable" && provider.state.mode === "manual");
-
-provider.dispose();
-
+const passed =
+  (provider.state.status === "authenticated" && structuredDecision?.valid === true) || recoverable;
 const evidence = Object.freeze({
-  scenario: "codex-oauth-agent-provider",
+  scenario: "codex-oauth-structured-agent-decision",
   status: passed ? "PASS" : "FAIL",
   state,
-  suggestion,
+  structuredDecision,
+  decisionFailure,
+  recoverable,
   credentialStoredByApp: false,
-  cleanup: "provider.dispose closed the app-server stdio process",
+  cleanup: "provider-disposed",
 });
 await mkdir(outputDirectory, { recursive: true });
 const outputPath = resolve(outputDirectory, "agent-provider-proof.json");
 const serializedEvidence = sanitizeSecret(JSON.stringify(evidence, null, 2), process.env.LAW_OC);
-await writeFile(outputPath, `${serializedEvidence}\n`, {
-  encoding: "utf8",
-  mode: 0o600,
-});
+await writeFile(outputPath, `${serializedEvidence}\n`, { encoding: "utf8", mode: 0o600 });
 console.log(
   sanitizeSecret(JSON.stringify({ ...evidence, evidencePath: outputPath }), process.env.LAW_OC),
 );
-
-if (!passed) {
-  process.exitCode = 1;
-}
+if (!passed) process.exitCode = 1;

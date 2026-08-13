@@ -25,6 +25,10 @@ interface IdentifierPattern {
 
 const IDENTIFIER_PATTERNS: readonly IdentifierPattern[] = [
   {
+    kind: "EMAIL",
+    pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu,
+  },
+  {
     kind: "CASE",
     pattern: /(?<!\d)(?:19|20)\d{2}[가-힣]{1,4}\d{1,10}(?!\d)/gu,
   },
@@ -46,6 +50,22 @@ const IDENTIFIER_PATTERNS: readonly IdentifierPattern[] = [
     pattern: /(?<!\d)\d{2,6}(?:-\d{2,6}){2,4}(?!\d)/g,
   },
 ];
+
+const CONTEXTUAL_PERSON =
+  /((?:성명|이름|신청인|송금인|sender)\s*[:=]\s*)([가-힣]{2,4})(?![가-힣])/giu;
+
+export function containsDirectIdentifier(input: string): boolean {
+  if (CONTEXTUAL_PERSON.test(input)) {
+    CONTEXTUAL_PERSON.lastIndex = 0;
+    return true;
+  }
+  CONTEXTUAL_PERSON.lastIndex = 0;
+  return IDENTIFIER_PATTERNS.some(({ pattern }) => {
+    const matched = pattern.test(input);
+    pattern.lastIndex = 0;
+    return matched;
+  });
+}
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -99,6 +119,10 @@ export class Redactor {
     for (const { kind, value } of structuredValues) {
       output = output.replaceAll(value, this.#token(caseId, kind, value));
     }
+    output = output.replace(
+      CONTEXTUAL_PERSON,
+      (_match, label: string, person: string) => `${label}${this.#token(caseId, "PERSON", person)}`,
+    );
     for (const { kind, pattern } of IDENTIFIER_PATTERNS) {
       output = output.replace(pattern, (identifier) => this.#token(caseId, kind, identifier));
     }

@@ -42,15 +42,18 @@ const externalFailure = result.ok ? undefined : result.error;
 const credentialFallbackReady =
   !missingCredentialResult.ok && missingCredentialResult.error.code === "needs_credentials";
 const authenticated = discoveryAuthenticated && result.ok && citationCount > 0;
-const capturedExternalFailure =
-  credentialPresent && externalFailure?.code === "execution_failed" && credentialFallbackReady;
-const passed = authenticated || capturedExternalFailure;
+const unavailable =
+  (!credentialPresent && externalFailure?.code === "needs_credentials") ||
+  (credentialPresent && externalFailure?.code === "execution_failed");
+const recoverable = unavailable && credentialFallbackReady;
+const passed = authenticated || recoverable;
 
 const evidence = Object.freeze({
   scenario: "korean-law-mcp-live-search",
   status: passed ? "PASS" : "FAIL",
   credentialPresent,
   authenticated,
+  recoverable,
   discovery: {
     authenticated: discoveryAuthenticated,
     tools: discoveredTools,

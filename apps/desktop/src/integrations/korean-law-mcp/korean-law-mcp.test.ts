@@ -93,7 +93,7 @@ describe("Korean law MCP adapter", () => {
     expect(fake.connections).toBe(1);
   });
 
-  test("sanitizes LAW_OC from child/server error text", async () => {
+  test("returns an opaque error without raw provider IDs, secrets, paths, or URLs", async () => {
     const secret = "law-secret-that-must-not-leak";
     const client: KoreanLawMcpClient = {
       async connect() {},
@@ -101,7 +101,9 @@ describe("Korean law MCP adapter", () => {
         return { tools: [] };
       },
       async callTool() {
-        throw new Error(`upstream rejected LAW_OC=${secret}`);
+        throw new Error(
+          `provider-id=raw-tool-42 LAW_OC=${secret} /home/user/private https://evil.example/leak`,
+        );
       },
       async close() {},
     };
@@ -118,10 +120,13 @@ describe("Korean law MCP adapter", () => {
       error: {
         code: "execution_failed",
         tool: "search_law",
-        message: "upstream rejected LAW_OC=[REDACTED]",
+        message: "Korean law MCP tool execution failed",
       },
     });
-    expect(JSON.stringify(result)).not.toContain(secret);
+    const serialized = JSON.stringify(result);
+    for (const raw of [secret, "raw-tool-42", "/home/user/private", "evil.example"]) {
+      expect(serialized).not.toContain(raw);
+    }
   });
 
   test("exposes exactly the five approved tools and rejects arbitrary discovery or execution", async () => {
@@ -151,12 +156,13 @@ describe("Korean law MCP adapter", () => {
 
     expect(discover).toEqual({
       ok: false,
-      error: { code: "tool_not_allowed", tool: "discover_tools" },
+      error: { code: "tool_not_allowed", tool: "[REJECTED]" },
     });
     expect(arbitrary).toEqual({
       ok: false,
-      error: { code: "tool_not_allowed", tool: "read_file" },
+      error: { code: "tool_not_allowed", tool: "[REJECTED]" },
     });
+    expect(JSON.stringify([discover, arbitrary])).not.toMatch(/discover_tools|read_file|passwd/u);
     expect(launches).toBe(1);
     expect(fake.calls).toHaveLength(0);
   });
