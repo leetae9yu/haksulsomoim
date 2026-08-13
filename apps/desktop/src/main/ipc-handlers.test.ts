@@ -123,6 +123,20 @@ describe("desktop IPC handlers", () => {
     expect(listener).toHaveBeenCalledWith({ caseId: "case-1", runId: "run-1", projection });
   });
 
+  test("rejects duplicate Agent list identities before returning a renderer result", async () => {
+    const { handlers, service } = agentServiceFixture();
+    service.list.mockImplementation(async () => [projection, projection]);
+    const duplicate = handlers.listAgentRuns({ caseId: "case-1" });
+    await expect(duplicate).rejects.toThrow("Duplicate Agent run identity");
+    const error = await duplicate.catch((reason: unknown) => reason);
+    const message = String(error);
+    expect(message.length).toBeLessThan(500);
+    expect(message).not.toContain("case-1");
+    expect(message).not.toContain("run-1");
+    service.list.mockImplementation(async () => [projection, { ...projection, runId: "run-2" }]);
+    await expect(handlers.listAgentRuns({ caseId: "case-1" })).resolves.toHaveLength(2);
+  });
+
   test("rejects stale approvals and renderer-supplied tool execution", async () => {
     const { handlers, service } = agentServiceFixture();
     service.decideApproval.mockImplementation(async () => ({

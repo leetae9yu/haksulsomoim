@@ -78,7 +78,23 @@ export const agentRunProjectionSchema = z.strictObject({
   lastStepId: z.string().min(1).max(128).nullable(),
   pendingApproval: pendingApprovalSchema.nullable(),
 });
-export const agentRunListResponseSchema = z.array(agentRunProjectionSchema).max(100);
+export const agentRunListResponseSchema = z
+  .array(agentRunProjectionSchema)
+  .max(100)
+  .superRefine((runs, context) => {
+    const identities = new Set<string>();
+    runs.forEach((run, index) => {
+      const identity = JSON.stringify([run.caseId, run.runId]);
+      if (identities.has(identity)) {
+        context.addIssue({
+          code: "custom",
+          message: "Duplicate Agent run identity",
+          path: [index],
+        });
+      }
+      identities.add(identity);
+    });
+  });
 export const agentRunEventSchema = z.strictObject({
   caseId: caseIdSchema,
   runId: agentRunIdSchema,

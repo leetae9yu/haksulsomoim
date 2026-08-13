@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   agentApprovalDecisionIpcRequestSchema,
   agentApprovalDecisionRequestSchema,
+  agentRunListResponseSchema,
   agentRunResumeRequestSchema,
   agentRunStartIpcRequestSchema,
   agentRunStartRequestSchema,
@@ -127,6 +128,42 @@ describe("desktop IPC contracts", () => {
         toolResult: { outcome: "completed" },
       }).success,
     ).toBe(false);
+  });
+
+  test("rejects only duplicate Agent case-run identity pairs", () => {
+    const run = {
+      caseId: "case-1",
+      runId: "run-1",
+      goal: {
+        kind: "civil-recovery" as const,
+        caseId: "case-1",
+        objective: "prepare-civil-demand" as const,
+      },
+      budget: { decisionsRemaining: 12, toolsRemaining: 8, durationMsRemaining: 300_000 },
+      state: { kind: "active" as const },
+      lastStepId: null,
+      pendingApproval: null,
+    };
+    const sameRunDifferentCase = {
+      ...run,
+      caseId: "case-2",
+      goal: { ...run.goal, caseId: "case-2" },
+    };
+    const sameCaseDifferentRun = { ...run, runId: "run-2" };
+
+    expect(agentRunListResponseSchema.safeParse([run, sameRunDifferentCase]).success).toBe(true);
+    expect(agentRunListResponseSchema.safeParse([run, sameCaseDifferentRun]).success).toBe(true);
+    const duplicate = agentRunListResponseSchema.safeParse([run, run]);
+    expect(duplicate.success).toBe(false);
+    if (!duplicate.success) {
+      expect(duplicate.error.issues).toEqual([
+        {
+          code: "custom",
+          message: "Duplicate Agent run identity",
+          path: [1],
+        },
+      ]);
+    }
   });
 
   test("requires case association and rejects empty evidence bytes or unknown fields", () => {
