@@ -1,7 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, readdir, unlink } from "node:fs/promises";
+import { link, lstat, open, readdir } from "node:fs/promises";
 import { z } from "zod";
+import {
+  type AgentRepositoryTemporaryIdentity,
+  cleanupAgentRepositoryKeyTemporary,
+} from "./agent-run-repository-key-cleanup";
 import {
   AGENT_REPOSITORY_KEY_MARKER,
   AgentRepositoryDirectoryPin,
@@ -16,8 +20,6 @@ const markerSchema = z.strictObject({
   verifier: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 const verificationTails = new Map<string, Promise<void>>();
-
-type FileIdentity = Readonly<{ dev: number; ino: number }>;
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
@@ -144,7 +146,8 @@ export class AgentRepositoryKeyVerifier {
       directory.path,
       randomBytes(12).toString("hex"),
     );
-    let identity: FileIdentity | undefined;
+    let identity: AgentRepositoryTemporaryIdentity | undefined;
+    let failure: Readonly<{ error: unknown }> | undefined;
     let published = false;
     try {
       const file = await open(paths.temporary, "wx", 0o600);
@@ -156,46 +159,28 @@ export class AgentRepositoryKeyVerifier {
       } finally {
         await file.close();
       }
-      await this.#assertOwnedTemporary(paths.temporary, identity);
       try {
         await link(paths.temporary, paths.marker);
         published = true;
       } catch (error) {
         if (!isNodeError(error, "EEXIST")) throw error;
       }
-      await this.#unlinkOwnedTemporary(paths.temporary, identity);
-      if (published) await this.#syncDirectory(directory);
     } catch (error) {
-      if (identity === undefined) throw error;
+      failure = { error };
+    }
+    if (identity !== undefined) {
       try {
-        await this.#unlinkOwnedTemporary(paths.temporary, identity);
+        await cleanupAgentRepositoryKeyTemporary(paths.temporary, identity);
       } catch (cleanupError) {
+        if (failure === undefined) throw cleanupError;
         throw new AggregateError(
-          [error, cleanupError],
+          [failure.error, cleanupError],
           "Agent repository key marker publication cleanup failed",
         );
       }
-      throw error;
     }
-  }
-
-  async #assertOwnedTemporary(path: string, identity: FileIdentity): Promise<void> {
-    const metadata = await lstat(path);
-    if (!metadata.isFile() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
-      throw new AgentRepositoryKeyMarkerError(
-        "Agent repository key marker temporary ownership changed",
-      );
-    }
-  }
-
-  async #unlinkOwnedTemporary(path: string, identity: FileIdentity): Promise<void> {
-    try {
-      await this.#assertOwnedTemporary(path, identity);
-    } catch (error) {
-      if (isNodeError(error, "ENOENT")) return;
-      throw error;
-    }
-    await unlink(path);
+    if (failure !== undefined) throw failure.error;
+    if (published) await this.#syncDirectory(directory);
   }
 
   #verifier(): string {
