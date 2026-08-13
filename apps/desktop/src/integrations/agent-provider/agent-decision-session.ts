@@ -61,7 +61,12 @@ export class AgentDecisionSession {
       method: "thread/start",
       params: { ephemeral: true, approvalPolicy: "never", sandbox: "read-only" },
     });
-    if (!record(thread) || !record(thread.thread) || typeof thread.thread.id !== "string") {
+    if (
+      !record(thread) ||
+      !record(thread.thread) ||
+      typeof thread.thread.id !== "string" ||
+      thread.thread.id.length === 0
+    ) {
       throw new Error("Codex app-server returned an invalid thread");
     }
     const threadId = thread.thread.id;
@@ -105,7 +110,12 @@ export class AgentDecisionSession {
           outputSchema: AGENT_DECISION_OUTPUT_SCHEMA,
         },
       });
-      if (!record(response) || !record(response.turn) || typeof response.turn.id !== "string") {
+      if (
+        !record(response) ||
+        !record(response.turn) ||
+        typeof response.turn.id !== "string" ||
+        response.turn.id.length === 0
+      ) {
         throw new Error("Codex app-server returned an invalid turn");
       }
       if (this.#active?.token !== token) return completion;
@@ -155,18 +165,27 @@ export class AgentDecisionSession {
     if (pending?.token !== token || !record(notification.params)) return;
     if (notification.params.threadId !== pending.threadId) return;
     if (pending.turnId === undefined) {
-      if (notification.method === "item/completed" || notification.method === "turn/completed") {
+      if (
+        notification.method === "turn/completed" ||
+        (notification.method === "item/completed" &&
+          typeof notification.params.turnId === "string" &&
+          notification.params.turnId.length > 0)
+      ) {
         pending.queued.push(notification);
       }
       return;
     }
-    if (
-      notification.params.threadId !== pending.threadId ||
-      ("turnId" in notification.params && notification.params.turnId !== pending.turnId)
-    ) {
-      return;
-    }
     if (notification.method === "item/completed") {
+      if (
+        pending.threadId.length === 0 ||
+        pending.turnId.length === 0 ||
+        typeof notification.params.threadId !== "string" ||
+        typeof notification.params.turnId !== "string" ||
+        notification.params.threadId !== pending.threadId ||
+        notification.params.turnId !== pending.turnId
+      ) {
+        return;
+      }
       const item = notification.params.item;
       if (record(item) && item.type === "agentMessage" && typeof item.text === "string") {
         pending.agentMessage = item.text;
