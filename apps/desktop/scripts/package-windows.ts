@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { listPackage } from "@electron/asar";
 import { getPath7za } from "app-builder-lib/out/toolsets/7zip.js";
 import { getMakeNsisPath } from "app-builder-lib/out/toolsets/windows.js";
+import { auditWindowsPackage, pruneWindowsNativePayload } from "./package-windows-audit.ts";
 import {
   assertWindowsDependencyPaths,
   collectPaths,
@@ -53,6 +54,7 @@ async function packageWindows(desktopRoot: string): Promise<void> {
       stageRoot,
     );
     assertWindowsDependencyPaths(collectPaths(stageRoot));
+    pruneWindowsNativePayload(stageRoot);
 
     const builderCli = resolve(desktopRoot, "node_modules/electron-builder/cli.js");
     const unpackedRoot = join(stageRoot, "dist", "win-unpacked");
@@ -75,7 +77,8 @@ async function packageWindows(desktopRoot: string): Promise<void> {
       throw new Error("Packaged application executable is not Windows x64");
     }
     const asarPath = join(unpackedRoot, "resources", "app.asar");
-    if (listPackage(asarPath, { isPack: false }).some((path) => isDependencyTestPath(path))) {
+    const asarPaths = listPackage(asarPath, { isPack: false });
+    if (asarPaths.some((path) => isDependencyTestPath(path))) {
       throw new Error("Packaged ASAR still contains dependency test payload");
     }
     const unpackedDependencies = join(
@@ -84,10 +87,12 @@ async function packageWindows(desktopRoot: string): Promise<void> {
       "app.asar.unpacked",
       "node_modules",
     );
+    pruneWindowsNativePayload(join(unpackedRoot, "resources", "app.asar.unpacked"));
     pruneDependencyTests(unpackedDependencies);
     if (collectPaths(unpackedDependencies).some((path) => isDependencyTestPath(path))) {
       throw new Error("Packaged production dependencies still contain test payload");
     }
+    console.log(JSON.stringify({ windowsPayload: auditWindowsPackage(unpackedRoot, asarPaths) }));
 
     const tools = await resolveElectronBuilderTools(platform(), getPath7za, getMakeNsisPath);
     const archivePath = join(stageRoot, "app-x64.7z");
