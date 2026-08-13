@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
+  type CodexAgentDecisionProvider,
   type CodexAgentProvider,
   createCodexAgentProvider,
 } from "../integrations/agent-provider/agent-provider";
@@ -13,12 +14,17 @@ import type { LocalOcrPort } from "../ocr/local-ocr";
 import { createLocalKorEngOcr } from "../ocr/tesseract-recognizer";
 import { Redactor } from "../security/redaction";
 import { LocalCaseStore } from "../storage/local-case-store";
+import { AgentRunRepository } from "./agent/agent-run-repository";
+import { ComposedAgentRuntime, type DesktopAgentRuntime } from "./agent/agent-runtime";
+import { createAgentLoopDependencies } from "./agent/agent-runtime-composition";
 import { createDesktopHandlers, type DesktopHandlers } from "./ipc-handlers";
+import { RuntimeCaseMutationQueue } from "./runtime-case-mutation-queue";
 import { EncryptedRuntimeCaseRepository } from "./runtime-case-repository";
 import { CaseRuntimeService } from "./runtime-case-service";
 
 export interface DesktopRuntime {
   readonly handlers: DesktopHandlers;
+  readonly agent: DesktopAgentRuntime;
   dispose(): Promise<void>;
 }
 
@@ -47,7 +53,13 @@ export async function createDesktopRuntime(
     join(userDataPath, "case-vault", "runtime-cases"),
     masterKey,
   );
+  const agentRuns = new AgentRunRepository({
+    directory: join(userDataPath, "case-vault", "agent-runs"),
+    encryptionKey: masterKey,
+  });
   const law = (factories.createLaw ?? createKoreanLawMcpAdapter)();
+  const redactor = new Redactor(masterKey);
+  const mutations = new RuntimeCaseMutationQueue();
 
   let ocrPromise: Promise<LocalOcrPort> | undefined;
   const getOcr = () => {
@@ -67,26 +79,59 @@ export async function createDesktopRuntime(
     nextCaseId: () => randomBytes(16).toString("hex"),
     storeEvidence: (bytes) => store.writeEvidence(bytes),
     analyzeEvidence: async (bytes) => (await getOcr()).recognize(bytes),
-    redactor: new Redactor(masterKey),
+    redactor,
     law,
     provider: getProvider,
   });
+  const external = {
+    law,
+    provider: async () => (await getProvider()) as CodexAgentDecisionProvider,
+  };
+  const agent = new ComposedAgentRuntime(
+    createAgentLoopDependencies({
+      runs: agentRuns,
+      cases: repository,
+      redactor,
+      external,
+      mutations,
+    }),
+    external,
+    agentRuns,
+  );
+  let disposal: Promise<void> | undefined;
 
   return {
     handlers: createDesktopHandlers(service),
-    async dispose() {
-      const disposals: Promise<unknown>[] = [law.close()];
-      if (ocrPromise !== undefined) disposals.push(ocrPromise.then((ocr) => ocr.terminate()));
-      if (providerPromise !== undefined) {
-        disposals.push(providerPromise.then((provider) => provider.dispose()));
-      }
-      const results = await Promise.allSettled(disposals);
-      const failures = results
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => result.reason);
-      if (failures.length > 0) {
-        throw new AggregateError(failures, "Desktop runtime disposal failed");
-      }
+    agent,
+    dispose() {
+      disposal ??= (async () => {
+        const agentResult = await Promise.allSettled([agent.dispose()]);
+        const disposals: Promise<unknown>[] = [law.close()];
+        if (ocrPromise !== undefined) {
+          disposals.push(
+            ocrPromise.then(
+              (ocr) => ocr.terminate(),
+              () => undefined,
+            ),
+          );
+        }
+        if (providerPromise !== undefined) {
+          disposals.push(
+            providerPromise.then(
+              (provider) => provider.dispose(),
+              () => undefined,
+            ),
+          );
+        }
+        const results = [...agentResult, ...(await Promise.allSettled(disposals))];
+        const failures = results
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map((result) => result.reason);
+        if (failures.length > 0) {
+          throw new AggregateError(failures, "Desktop runtime disposal failed");
+        }
+      })();
+      return disposal;
     },
   };
 }

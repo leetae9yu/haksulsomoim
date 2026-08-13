@@ -52,7 +52,7 @@ export function createAgentLoopControl(
   runId: string,
   approvedContextDigest: string,
   citationIds: readonly string[],
-  run: AgentRun,
+  snapshot: AgentRunSnapshot,
 ): AgentLoopControl {
   let requestCancellation = (): void => undefined;
   const cancellationRequested = new Promise<void>((resolve) => {
@@ -64,7 +64,7 @@ export function createAgentLoopControl(
     approvedContextDigest,
     citationIds: new Set(citationIds),
     toolCorrelations: new Map(),
-    snapshot: { run, cursor: 0 },
+    snapshot,
     cancellationRequested,
     requestCancellation,
     cancelled: false,

@@ -23,11 +23,9 @@ export interface AgentRunRepositoryOptions {
   readonly directory: string;
   readonly encryptionKey: Uint8Array;
 }
-
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
-
 function assertUniqueHistory(steps: readonly AgentStep[]): void {
   const stepIds = new Set<string>();
   const decisionIds = new Set<string>();
@@ -153,20 +151,15 @@ export class AgentRunRepository {
   readonly #ownership: AgentRunCaseOwnership;
 
   constructor(options: AgentRunRepositoryOptions) {
-    if (options.directory.length === 0) throw new TypeError("An Agent run directory is required");
-    if (options.encryptionKey.byteLength !== 32) {
+    const { directory, encryptionKey } = options;
+    if (directory.length === 0) throw new TypeError("An Agent run directory is required");
+    if (encryptionKey.byteLength !== 32) {
       throw new RangeError("AES-256-GCM requires a 32-byte encryption key");
     }
-    const verifier = new AgentRepositoryKeyVerifier(options.directory, options.encryptionKey);
-    this.#store = new EncryptedAgentRunRecordStore(
-      options.directory,
-      options.encryptionKey,
-      verifier,
-    );
-    this.#ownership = new AgentRunCaseOwnership(
-      this.#store,
-      new EncryptedAgentCaseClaimStore(options.directory, options.encryptionKey, verifier),
-    );
+    const verifier = new AgentRepositoryKeyVerifier(directory, encryptionKey);
+    this.#store = new EncryptedAgentRunRecordStore(directory, encryptionKey, verifier);
+    const claims = new EncryptedAgentCaseClaimStore(directory, encryptionKey, verifier);
+    this.#ownership = new AgentRunCaseOwnership(this.#store, claims);
   }
 
   async create(run: AgentRun): Promise<void> {
@@ -205,6 +198,21 @@ export class AgentRunRepository {
       throw new TypeError("Agent case and run IDs are required");
     }
     return this.#ownership.release(caseId, runId);
+  }
+
+  async resumeOwned(snapshot: AgentRunSnapshot): Promise<AgentRunSnapshot> {
+    const previous = { run: agentRunSchema.parse(snapshot.run), cursor: snapshot.cursor };
+    if (previous.run.state.kind !== "interrupted") {
+      throw new AgentRunInvariantError("Only interrupted Agent runs may be resumed");
+    }
+    const resumed = {
+      run: agentRunSchema.parse({ ...previous.run, state: { kind: "active" } }),
+      cursor: previous.cursor,
+    };
+    assertSafeAgentText(resumed.run);
+    assertUniqueHistory(resumed.run.steps);
+    await this.#ownership.resume(previous, resumed.run);
+    return resumed;
   }
 
   async load(runId: string): Promise<AgentRunSnapshot> {

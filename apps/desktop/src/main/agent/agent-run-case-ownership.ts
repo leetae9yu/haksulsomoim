@@ -61,6 +61,26 @@ export class AgentRunCaseOwnership {
     return this.#claims.owner(caseId);
   }
 
+  async resume(expected: AgentRunSnapshot, run: AgentRun): Promise<void> {
+    await this.#claims.acquire(run.caseId, run.runId);
+    try {
+      await this.#runs.write({ run, cursor: expected.cursor }, false, expected);
+    } catch (error) {
+      let published: AgentRunSnapshot;
+      try {
+        published = await this.#runs.read(run.runId);
+      } catch (readError) {
+        throw new AggregateError(
+          [error, readError],
+          "Agent run resume failed with an unknown durable outcome",
+        );
+      }
+      if (JSON.stringify(published.run) === JSON.stringify(run)) return;
+      await this.#claims.release(run.caseId, run.runId);
+      throw error;
+    }
+  }
+
   async release(caseId: string, runId: string): Promise<void> {
     const owner = await this.#claims.owner(caseId);
     if (owner === undefined) return;

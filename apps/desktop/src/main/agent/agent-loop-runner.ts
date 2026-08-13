@@ -14,6 +14,7 @@ import {
 } from "./agent-loop-settlements";
 import { acceptAgentDecision, prepareAgentTurn } from "./agent-loop-turns";
 import type { AgentLoopProvider } from "./agent-loop-types";
+import type { AgentRunSnapshot } from "./agent-run-repository";
 
 type ProviderTurn =
   | Readonly<{ kind: "decision"; raw: unknown }>
@@ -47,7 +48,7 @@ export class AgentLoopRunner {
       runId: string;
       approvedContextDigest: string;
       citationIds: readonly string[];
-      run: AgentRun;
+      snapshot: AgentRunSnapshot;
     }>,
   ) {
     this.#dependencies = dependencies;
@@ -57,7 +58,7 @@ export class AgentLoopRunner {
       input.runId,
       input.approvedContextDigest,
       input.citationIds,
-      input.run,
+      input.snapshot,
     );
   }
 
@@ -138,12 +139,26 @@ export class AgentLoopRunner {
   }
 
   async #persistAndInterruptCancellation(): Promise<AgentRun> {
-    const run = await cancelActiveAgentRun(this.#dependencies, this.#control);
+    let persistenceFailure: unknown;
+    let run: AgentRun | undefined;
+    try {
+      run = await cancelActiveAgentRun(this.#dependencies, this.#control);
+    } catch (error) {
+      persistenceFailure = error;
+    }
     try {
       await this.#control.provider?.interrupt();
-    } catch {
+    } catch (interruptFailure) {
+      if (persistenceFailure !== undefined) {
+        throw new AggregateError(
+          [persistenceFailure, interruptFailure],
+          "Agent cancellation persistence and transport interruption failed",
+        );
+      }
       // Persisted host cancellation is authoritative when transport interruption fails.
     }
+    if (persistenceFailure !== undefined) throw persistenceFailure;
+    if (run === undefined) throw new AgentLoopStateError("Agent cancellation did not settle");
     return run;
   }
 

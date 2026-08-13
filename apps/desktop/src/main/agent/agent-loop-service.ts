@@ -45,7 +45,7 @@ export class AgentLoopService {
         runId,
         approvedContextDigest: input.approvedContextDigest,
         citationIds: projection.citationIds,
-        run,
+        snapshot: { run, cursor: 0 },
       });
       await this.#dependencies.runs.createOwned(run);
       this.#active.set(input.caseId, runner);
@@ -55,6 +55,13 @@ export class AgentLoopService {
     const run = await prepared.runner.drive();
     await this.#releaseRunner(prepared.runner, run);
     return run;
+  }
+
+  activeRuns(): readonly AgentLoopRunReference[] {
+    return [...this.#active.values()].map((runner) => ({
+      caseId: runner.caseId,
+      runId: runner.runId,
+    }));
   }
 
   async cancel(input: AgentLoopRunReference): Promise<AgentRun> {
