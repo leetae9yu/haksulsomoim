@@ -1,5 +1,8 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join, relative } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
+import { extractAll, listPackage, statFile } from "@electron/asar";
 
 const fsSafeNativePath = "node_modules/@openclaw/fs-safe/dist/native";
 const fsSafeWindowsTarget = "win32-x64-msvc/fs-safe-native.node";
@@ -12,6 +15,10 @@ const onnxRuntimeRoots = [
   "node_modules/onnxruntime-node/bin/napi-v6",
   "node_modules/kordoc/node_modules/onnxruntime-node/bin/napi-v6",
 ] as const;
+
+const forbiddenMetadata = /(?:\.map|\.d\.[cm]?ts)$/iu;
+const forbiddenKordoc =
+  /(?:^|\/)kordoc\/(?:.*\/)?(?:src|source|docs?|examples?)(?:\/|$)|(?:^|\/)kordoc\/dist\/(?:cli|mcp)\.(?:js|cjs|mjs)$|(?:^|\/)kordoc\/(?:readme(?:\.[^/]*)?|notice|third_party(?:\.[^/]*))$/iu;
 
 export type WindowsPayloadAudit = Readonly<{
   fsSafeNative: readonly string[];
@@ -33,6 +40,8 @@ function filesBelow(root: string): string[] {
 
 function isForbiddenPath(path: string): boolean {
   return (
+    forbiddenMetadata.test(path) ||
+    forbiddenKordoc.test(path) ||
     /(^|\/)(?:\.omo|evidence|secrets?|test|tests|__tests__)(?:\/|$)/iu.test(path) ||
     /(^|\/)(?:qa(?:[-_.]|$)|[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|\.env(?:\.[^/]+)?)(?:$|\/)/iu.test(
       path,
@@ -95,6 +104,55 @@ export function pruneWindowsNativePayload(stageRoot: string): void {
     const nativeRoot = join(stageRoot, path);
     if (existsSync(nativeRoot)) keepWindowsX64(nativeRoot);
   }
+}
+
+function normalizedAsarPath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/^\/+/, "");
+}
+
+function assertRuntimeImports(extractedRoot: string): void {
+  const kordocManifest = JSON.parse(
+    readFileSync(join(extractedRoot, "node_modules/kordoc/package.json"), "utf8"),
+  ) as Record<string, unknown>;
+  if (kordocManifest.bin !== undefined || kordocManifest.scripts !== undefined) {
+    throw new Error("Forbidden Kordoc command metadata remains");
+  }
+  const entries = [
+    "node_modules/kordoc/dist/index.js",
+    "node_modules/korean-law-mcp/build/lib/annex-file-parser.js",
+    "node_modules/tesseract.js/src/index.js",
+  ];
+  const script = entries
+    .map((entry) => `await import(${JSON.stringify(`file://${resolve(extractedRoot, entry)}`)});`)
+    .join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: extractedRoot,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(`Extracted runtime import failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+export function assertAsarIntegrity(asarPath: string): readonly string[] {
+  const paths = listPackage(asarPath, { isPack: false });
+  const unpackedRoot = `${asarPath}.unpacked`;
+  for (const path of paths) {
+    const normalized = normalizedAsarPath(path);
+    if (statFile(asarPath, normalized).unpacked && !existsSync(join(unpackedRoot, normalized))) {
+      throw new Error(`stale unpacked ASAR reference: ${normalized}`);
+    }
+  }
+  const forbidden = paths.map(normalizedAsarPath).filter(isForbiddenPath);
+  if (forbidden.length > 0) throw new Error(`Forbidden ASAR metadata: ${forbidden.join(", ")}`);
+  const extractedRoot = mkdtempSync(join(tmpdir(), "haksul-asar-extract-"));
+  try {
+    extractAll(asarPath, extractedRoot);
+    assertRuntimeImports(extractedRoot);
+  } finally {
+    rmSync(extractedRoot, { force: true, recursive: true });
+  }
+  return paths;
 }
 
 export function auditWindowsPackage(

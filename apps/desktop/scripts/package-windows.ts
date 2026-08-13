@@ -11,10 +11,14 @@ import {
 import { arch, platform, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { listPackage } from "@electron/asar";
 import { getPath7za } from "app-builder-lib/out/toolsets/7zip.js";
 import { getMakeNsisPath } from "app-builder-lib/out/toolsets/windows.js";
-import { auditWindowsPackage, pruneWindowsNativePayload } from "./package-windows-audit.ts";
+import { securePrivateArtifact } from "./package-windows-artifact.ts";
+import {
+  assertAsarIntegrity,
+  auditWindowsPackage,
+  pruneWindowsNativePayload,
+} from "./package-windows-audit.ts";
 import {
   assertWindowsDependencyPaths,
   collectPaths,
@@ -56,6 +60,9 @@ async function packageWindows(desktopRoot: string): Promise<void> {
     );
     assertWindowsDependencyPaths(collectPaths(stageRoot));
     pruneWindowsNativePayload(stageRoot);
+    const stagedDependencies = join(stageRoot, "node_modules");
+    pruneDependencyTests(stagedDependencies);
+    pruneDependencyMetadata(stagedDependencies);
 
     const builderCli = resolve(desktopRoot, "node_modules/electron-builder/cli.js");
     const unpackedRoot = join(stageRoot, "dist", "win-unpacked");
@@ -78,7 +85,7 @@ async function packageWindows(desktopRoot: string): Promise<void> {
       throw new Error("Packaged application executable is not Windows x64");
     }
     const asarPath = join(unpackedRoot, "resources", "app.asar");
-    const asarPaths = listPackage(asarPath, { isPack: false });
+    const asarPaths = assertAsarIntegrity(asarPath);
     if (asarPaths.some((path) => isDependencyTestPath(path))) {
       throw new Error("Packaged ASAR still contains dependency test payload");
     }
@@ -88,9 +95,6 @@ async function packageWindows(desktopRoot: string): Promise<void> {
       "app.asar.unpacked",
       "node_modules",
     );
-    pruneWindowsNativePayload(join(unpackedRoot, "resources", "app.asar.unpacked"));
-    pruneDependencyTests(unpackedDependencies);
-    pruneDependencyMetadata(unpackedDependencies);
     if (collectPaths(unpackedDependencies).some((path) => isDependencyTestPath(path))) {
       throw new Error("Packaged production dependencies still contain test payload");
     }
@@ -146,6 +150,7 @@ async function packageWindows(desktopRoot: string): Promise<void> {
     if (!existsSync(setupPath) || statSync(setupPath).size <= statSync(archivePath).size) {
       throw new Error("NSIS setup is missing or does not contain the application archive");
     }
+    securePrivateArtifact(setupPath);
     const digest = await sha256(setupPath);
     const hashPath = `${setupPath}.sha256`;
     writeFileSync(hashPath, hashReceipt(setupPath, digest), { mode: 0o600 });

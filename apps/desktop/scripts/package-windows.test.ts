@@ -1,7 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { securePrivateArtifact } from "./package-windows-artifact.ts";
 import {
   assertWindowsDependencyPaths,
   FIXED_INSTALL_DIR,
@@ -149,6 +160,36 @@ SectionEnd
     expect(markerCheck).toBeLessThan(template.indexOf('Delete "$DESKTOP'));
     expect(markerCheck).toBeLessThan(template.indexOf('RMDir /r "$INSTDIR"'));
     expect(template).not.toContain("$APPDATA");
+  });
+
+  test("publishes only the owned regular installer as mode 0600 across path races", () => {
+    const root = mkdtempSync(join(tmpdir(), "haksul-private-artifact-"));
+    try {
+      const setup = join(root, "setup.exe");
+      writeFileSync(setup, "installer", { mode: 0o644 });
+      securePrivateArtifact(setup);
+      expect(lstatSync(setup).mode & 0o777).toBe(0o600);
+
+      const target = join(root, "target.exe");
+      writeFileSync(target, "target", { mode: 0o600 });
+      rmSync(setup);
+      symlinkSync(target, setup);
+      expect(() => securePrivateArtifact(setup)).toThrow("regular non-symlink");
+
+      rmSync(setup);
+      writeFileSync(setup, "installer", { mode: 0o644 });
+      expect(() =>
+        securePrivateArtifact(setup, () => {
+          const replacement = join(root, "replacement.exe");
+          writeFileSync(replacement, "replacement", { mode: 0o644 });
+          renameSync(replacement, setup);
+        }),
+      ).toThrow("identity changed");
+      expect(lstatSync(setup).mode & 0o777).toBe(0o644);
+    } finally {
+      chmodSync(root, 0o700);
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 
   test("release report explicitly identifies private unsigned checksum artifacts", () => {

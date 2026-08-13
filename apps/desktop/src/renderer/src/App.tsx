@@ -1,9 +1,15 @@
-import { type SyntheticEvent, useRef, useState } from "react";
+import { type SyntheticEvent, useEffect, useRef, useState } from "react";
 import type {
   CaseCreateResponse,
   EvidenceAnalyzeResponse,
   WorkflowSnapshot,
 } from "../../contracts/desktop-api";
+import { AgentWorkspace } from "./AgentWorkspace";
+import {
+  initialAgentCaseBinding,
+  loadAgentCaseBinding,
+  persistAgentCaseBinding,
+} from "./agent-recovery-binding";
 import { ProgressRail, Topbar } from "./components/AppChrome";
 import { CaseIntake, CaseSummary, Hero } from "./components/CaseIntake";
 import { EvidencePanel } from "./components/EvidencePanel";
@@ -21,6 +27,7 @@ type AcceptedCase = Extract<CaseCreateResponse, { status: "accepted" }>;
 export function App() {
   const [amount, setAmount] = useState("");
   const [activeCase, setActiveCase] = useState<AcceptedCase>();
+  const [recoveryCaseId, setRecoveryCaseId] = useState(initialAgentCaseBinding);
   const [workflow, setWorkflow] = useState<WorkflowSnapshot>();
   const [evidence, setEvidence] = useState<EvidenceAnalyzeResponse>();
   const [fileName, setFileName] = useState("");
@@ -38,11 +45,26 @@ export function App() {
 
   const activeStep = workflowStep(workflow, evidence !== undefined, confirmedText.length > 0);
 
+  useEffect(() => {
+    let current = true;
+    void loadAgentCaseBinding()
+      .then((caseId) => {
+        if (current && caseId !== undefined && activeCaseId.current === undefined) {
+          setRecoveryCaseId(caseId);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+
   function activateCase(nextCase: AcceptedCase) {
     evidenceRequest.current += 1;
     confirmationRequest.current += 1;
     activeCaseId.current = nextCase.caseId;
     setActiveCase(nextCase);
+    setRecoveryCaseId(nextCase.caseId);
     setWorkflow({
       criminalState: nextCase.criminalState,
       civilState: nextCase.civilState,
@@ -75,7 +97,8 @@ export function App() {
       });
       if (requestId !== caseRequest.current) return;
       if (result.status === "accepted") {
-        activateCase(result);
+        await persistAgentCaseBinding(result.caseId);
+        if (requestId === caseRequest.current) activateCase(result);
       } else {
         setCaseError(messages.outOfScope);
       }
@@ -188,6 +211,16 @@ export function App() {
           onAmountChange={setAmount}
           onSubmit={(event) => void startCase(event)}
         />
+        {activeCase === undefined && recoveryCaseId !== undefined && (
+          <section className="integration-board reveal" aria-label="중단된 Agent 실행 복구">
+            <div>
+              <span className="panel-kicker">RECOVERED CASE</span>
+              <h2>중단된 Agent 실행</h2>
+              <p>암호화 금고의 마지막 체크포인트를 확인한 뒤 직접 재개하세요.</p>
+            </div>
+            <AgentWorkspace caseId={recoveryCaseId} officialCitationCount={0} />
+          </section>
+        )}
         {activeCase !== undefined && <CaseSummary activeCase={activeCase} />}
         {activeCase !== undefined && (
           <EvidencePanel

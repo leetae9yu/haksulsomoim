@@ -2,11 +2,34 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
+import { activeProjection } from "./agent-workspace-test-fixtures";
 import { installApi, reachTracks, startCase, uploadEvidence } from "./renderer-test-utils";
 
-afterEach(cleanup);
+const recoveryKey = "haksul.agent.active-case.v1";
+afterEach(() => {
+  localStorage.removeItem(recoveryKey);
+  cleanup();
+});
 
 describe("domain-backed desktop case workflow", () => {
+  test("rehydrates an interrupted Agent workspace from the last opaque case binding", async () => {
+    const interrupted = {
+      ...activeProjection("case-recovered"),
+      state: { kind: "interrupted", interruption: { kind: "application-restarted" } },
+    } as const;
+    localStorage.setItem(recoveryKey, "case-recovered");
+    installApi({ listAgentRuns: async () => [interrupted] });
+
+    render(<App />);
+
+    expect(await screen.findByTestId("agent-workspace")).toHaveProperty(
+      "dataset.agentStatus",
+      "interrupted",
+    );
+    expect(screen.getByRole("button", { name: "명시적으로 재개" })).toBeTruthy();
+    expect(screen.getAllByTestId(/agent-workspace/)).toHaveLength(1);
+  });
+
   test("passes explicit case IDs and confirms OCR before rendering separate tracks", async () => {
     const api = installApi();
     const user = userEvent.setup();

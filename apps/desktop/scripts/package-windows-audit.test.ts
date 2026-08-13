@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createPackageWithOptions } from "@electron/asar";
 import {
+  assertAsarIntegrity,
   auditWindowsPackage,
   fsSafeNativeInventory,
   pruneWindowsNativePayload,
@@ -77,6 +79,20 @@ describe("Windows package payload audit", () => {
       write(join(root, "node_modules/kordoc/dist/index.js"), "export {};");
       write(join(root, "node_modules/kordoc/dist/cli.js"), "010-1234-5678");
       write(join(root, "node_modules/kordoc/dist/mcp.js"), "010-1234-5678");
+      write(join(root, "node_modules/kordoc/src/parser.ts"), "source");
+      write(join(root, "node_modules/kordoc/README.md"), "documentation");
+      write(
+        join(root, "node_modules/kordoc/package.json"),
+        JSON.stringify({
+          name: "kordoc",
+          version: "1.0.0",
+          type: "module",
+          main: "dist/index.js",
+          bin: { kordoc: "dist/cli.js" },
+          scripts: { test: "test" },
+          dependencies: { "markdown-it": "1.0.0" },
+        }),
+      );
 
       pruneDependencyMetadata(root);
 
@@ -86,7 +102,32 @@ describe("Windows package payload audit", () => {
       expect(existsSync(join(root, "node_modules/kordoc/dist/index.js"))).toBe(true);
       expect(existsSync(join(root, "node_modules/kordoc/dist/cli.js"))).toBe(false);
       expect(existsSync(join(root, "node_modules/kordoc/dist/mcp.js"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/kordoc/src"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/kordoc/README.md"))).toBe(false);
+      const manifest = JSON.parse(
+        readFileSync(join(root, "node_modules/kordoc/package.json"), "utf8"),
+      );
+      expect(manifest.bin).toBeUndefined();
+      expect(manifest.scripts).toBeUndefined();
+      expect(manifest.main).toBe("dist/index.js");
+      expect(manifest.dependencies).toEqual({ "markdown-it": "1.0.0" });
     });
+  });
+
+  test("rejects stale unpacked ASAR references and forbidden indexed metadata", async () => {
+    const root = mkdtempSync(join(tmpdir(), "haksul-asar-integrity-"));
+    try {
+      const source = join(root, "source");
+      write(join(source, "node_modules/kordoc/dist/index.js"), "export {};");
+      write(join(source, "node_modules/kordoc/dist/index.d.ts"), "export {};");
+      const asar = join(root, "app.asar");
+      await createPackageWithOptions(source, asar, { unpack: "**/*" });
+      rmSync(join(`${asar}.unpacked`, "node_modules/kordoc/dist/index.d.ts"));
+
+      expect(() => assertAsarIntegrity(asar)).toThrow("stale unpacked ASAR reference");
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 
   test("fails staging when the required Windows fs-safe native binding is absent", () => {
