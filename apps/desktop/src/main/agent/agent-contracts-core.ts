@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-const semanticId = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
+const semanticId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const boundedText = z.string().trim().min(1).max(2_000);

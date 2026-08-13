@@ -62,6 +62,10 @@ const projection = {
     contextDigest: digest,
     action: "review-draft" as const,
   },
+  steps: [
+    { kind: "approval-requested" as const, stepId: "step-1", action: "review-draft" as const },
+  ],
+  citations: [],
 };
 
 function agentServiceFixture() {

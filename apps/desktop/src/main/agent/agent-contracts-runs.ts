@@ -8,7 +8,11 @@ import {
   interruptionSchema,
   terminalOutcomeSchema,
 } from "./agent-contracts-core";
-import { agentStepSchema, approvalDecisionSchema, approvalRequestSchema } from "./agent-contracts-decisions";
+import {
+  agentStepSchema,
+  approvalDecisionSchema,
+  approvalRequestSchema,
+} from "./agent-contracts-decisions";
 
 const activeRunStateSchema = z.strictObject({ kind: z.literal("active") }).readonly();
 const pausedRunStateSchema = z

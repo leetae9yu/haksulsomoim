@@ -209,6 +209,7 @@ export function App() {
             <TrackBoard
               caseId={activeCase.caseId}
               confirmedText={confirmedText}
+              contextDigest={evidence.sha256}
               key={`${activeCase.caseId}:${evidence.evidenceId}`}
               onWorkflowChange={(snapshot) => updateWorkflow(activeCase.caseId, snapshot)}
               workflow={workflow}

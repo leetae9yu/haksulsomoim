@@ -13,10 +13,10 @@ const GUIDANCE_QUERY = "국내 계좌이체 소액사기 지급명령 송달 확
 
 export function GuidancePanel({
   caseId,
-  onCitationIds,
+  onCitations,
 }: {
   readonly caseId: string;
-  readonly onCitationIds: (ids: readonly string[]) => void;
+  readonly onCitations: (citations: readonly KoreanLawCitation[]) => void;
 }) {
   const [state, setState] = useState<GuidanceState>({ status: "loading" });
 
@@ -24,7 +24,7 @@ export function GuidancePanel({
     const guidance = window.haksul.guidance;
     if (guidance === undefined) {
       setState({ status: "manual", message: messages.guidanceUnavailable });
-      onCitationIds([]);
+      onCitations([]);
       return;
     }
     let current = true;
@@ -33,10 +33,10 @@ export function GuidancePanel({
         if (!current) return;
         if (result.status === "ok") {
           setState({ status: "ready", citations: result.citations });
-          onCitationIds(result.citations.map((citation) => citation.id));
+          onCitations(result.citations);
           return;
         }
-        onCitationIds([]);
+        onCitations([]);
         setState({
           status: result.status === "needs-credentials" ? "manual" : "error",
           message:
@@ -47,13 +47,13 @@ export function GuidancePanel({
       })
       .catch(() => {
         if (!current) return;
-        onCitationIds([]);
+        onCitations([]);
         setState({ status: "error", message: messages.guidanceFailed });
       });
     return () => {
       current = false;
     };
-  }, [caseId, onCitationIds]);
+  }, [caseId, onCitations]);
 
   return (
     <section className="guidance-panel" data-guidance-state={state.status}>

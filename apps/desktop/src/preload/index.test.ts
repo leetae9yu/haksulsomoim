@@ -18,6 +18,8 @@ describe("desktop preload bridge", () => {
       state: { kind: "active" },
       lastStepId: null,
       pendingApproval: null,
+      steps: [],
+      citations: [],
     }));
     const ipc = {
       invoke,

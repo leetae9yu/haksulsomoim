@@ -143,6 +143,8 @@ describe("desktop IPC contracts", () => {
       state: { kind: "active" as const },
       lastStepId: null,
       pendingApproval: null,
+      steps: [],
+      citations: [],
     };
     const sameRunDifferentCase = {
       ...run,

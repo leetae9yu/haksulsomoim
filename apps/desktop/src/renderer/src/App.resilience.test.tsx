@@ -88,14 +88,14 @@ describe("renderer recovery boundaries", () => {
     const user = userEvent.setup();
     render(<App />);
     await reachTracks(user);
-    expect(await screen.findByTestId("provider-panel")).toBeTruthy();
+    expect(await screen.findByTestId("agent-workspace")).toBeTruthy();
 
     setAmount("1000000");
     await user.click(screen.getByRole("button", { name: "사건 시작" }));
 
     expect(screen.getByRole("heading", { name: "형사 절차" })).toBeTruthy();
     expect(screen.getAllByText("5,380,000원 송금 완료").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("provider-panel")).toBeTruthy();
+    expect(screen.getByTestId("agent-workspace")).toBeTruthy();
 
     await act(async () => {
       replacement.resolve(acceptedCase("case-2", 1_000_000));
@@ -104,7 +104,7 @@ describe("renderer recovery boundaries", () => {
     expect(await screen.findByText("₩1,000,000")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "형사 절차" })).toBeNull();
     expect(screen.queryByText("5,380,000원 송금 완료")).toBeNull();
-    expect(screen.queryByTestId("provider-panel")).toBeNull();
+    expect(screen.queryByTestId("agent-workspace")).toBeNull();
   });
 
   test("keeps the active case usable after rejected and failed replacement intake", async () => {
@@ -125,7 +125,7 @@ describe("renderer recovery boundaries", () => {
     let message = screen.getByRole("alert").textContent ?? "";
     expect(message.length).toBeLessThanOrEqual(120);
     expect(screen.getByText("₩5,380,000")).toBeTruthy();
-    expect(screen.getByTestId("provider-panel")).toBeTruthy();
+    expect(screen.getByTestId("agent-workspace")).toBeTruthy();
 
     setAmount("2000000");
     await user.click(screen.getByRole("button", { name: "사건 시작" }));

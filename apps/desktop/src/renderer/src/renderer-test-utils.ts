@@ -114,6 +114,8 @@ export function installApi(overrides: Partial<DesktopApi> = {}) {
       text: "확인된 사실을 기준으로 정리했습니다.",
       citationIds: [],
     })),
+    listAgentRuns: mock(async () => []),
+    subscribeAgentRun: mock(() => () => undefined),
     ...overrides,
   };
   Object.defineProperty(window, "haksul", { configurable: true, value: api });

@@ -2,19 +2,19 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
+  AgentRunStartIpcRequest,
   CodexStatusResponse,
-  CodexSuggestionRequest,
-  CodexSuggestionResponse,
   EmptyRequest,
   GuidanceRequest,
   GuidanceResponse,
 } from "../../contracts/desktop-api";
 import { App } from "./App";
+import { completedProjection } from "./agent-workspace-test-fixtures";
 import { installApi, reachTracks } from "./renderer-test-utils";
 
 afterEach(cleanup);
 
-describe("official guidance and optional Codex provider", () => {
+describe("official guidance and autonomous Agent workspace", () => {
   test("renders checkable official citations and opens them through the trusted bridge", async () => {
     const openOfficialSource = mock(async () => undefined);
     const guidance = mock(
@@ -48,12 +48,9 @@ describe("official guidance and optional Codex provider", () => {
     });
   });
 
-  test("requires explicit approval and sends only case and citation identifiers to Codex", async () => {
-    const codexSuggestion = mock(
-      async (_request: CodexSuggestionRequest): Promise<CodexSuggestionResponse> => ({
-        text: "공식 근거를 바탕으로 제출 전 점검 항목을 정리했습니다.",
-        citationIds: ["law-1"],
-      }),
+  test("replaces the optional suggestion with digest-bound Agent start", async () => {
+    const startAgentRun = mock(async (request: AgentRunStartIpcRequest) =>
+      completedProjection(request.caseId, request.goal),
     );
     installApi({
       codexStatus: mock(
@@ -62,32 +59,35 @@ describe("official guidance and optional Codex provider", () => {
           account: { type: "chatgpt", email: "private@example.com", planType: "plus" },
         }),
       ),
-      codexSuggestion,
+      startAgentRun,
     });
     const user = userEvent.setup();
     render(<App />);
     await reachTracks(user);
 
-    const panel = await screen.findByTestId("provider-panel");
-    await waitFor(() => expect(panel.dataset.providerState).toBe("authenticated"));
-    const suggestionButton = screen.getByRole("button", { name: "Codex 제안 받기" });
-    expect((suggestionButton as HTMLButtonElement).disabled).toBe(true);
-    expect(document.querySelector('input[type="password"]')).toBeNull();
-    expect(document.querySelector('input[type="email"]')).toBeNull();
-    expect(screen.queryByText("private@example.com")).toBeNull();
+    const workspace = await screen.findByTestId("agent-workspace");
+    await waitFor(() => expect(workspace.dataset.agentProvider).toBe("authenticated"));
+    expect(screen.queryByText("OPTIONAL CODEX")).toBeNull();
+    expect(screen.queryByText("문안 점검 제안")).toBeNull();
+    expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", true);
+    await user.click(screen.getByLabelText("민사 회수"));
+    await user.click(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/));
+    await user.click(screen.getByTestId("agent-start"));
 
-    await user.click(screen.getByLabelText("마스킹된 사실과 근거 ID 전송을 승인합니다"));
-    await user.click(suggestionButton);
-    expect(codexSuggestion).toHaveBeenCalledWith({
+    expect(startAgentRun).toHaveBeenCalledWith({
       caseId: "case-1",
-      approval: "user-approved",
-      citationIds: ["law-1"],
+      contextDigest: "a".repeat(64),
+      goal: {
+        kind: "civil-recovery",
+        caseId: "case-1",
+        objective: "prepare-civil-demand",
+      },
     });
-    expect(JSON.stringify(codexSuggestion.mock.calls[0]?.[0])).not.toContain("5,380,000원");
-    expect(await screen.findByTestId("codex-suggestion")).toBeTruthy();
+    await waitFor(() => expect(workspace.dataset.agentStatus).toBe("completed"));
+    expect(screen.queryByText("private@example.com")).toBeNull();
   });
 
-  test("renders typed sign-in and offline/manual states without credential fields", async () => {
+  test("uses only the trusted external authentication control", async () => {
     const codexLogin = mock(async () => ({
       loginId: "login-1",
       authorizationUrl: "https://auth.openai.com/authorize?client=haksul",
@@ -107,20 +107,19 @@ describe("official guidance and optional Codex provider", () => {
     render(<App />);
     await reachTracks(user);
 
-    const panel = await screen.findByTestId("provider-panel");
-    await waitFor(() => expect(panel.dataset.providerState).toBe("sign-in-required"));
+    const workspace = await screen.findByTestId("agent-workspace");
+    await waitFor(() => expect(workspace.dataset.agentProvider).toBe("sign-in-required"));
     await user.click(screen.getByRole("button", { name: "ChatGPT로 로그인" }));
     expect(codexLogin).toHaveBeenCalledWith({});
-    await waitFor(() => expect(panel.dataset.providerState).toBe("login-ready"));
+    await waitFor(() => expect(workspace.dataset.agentProvider).toBe("login-ready"));
     await user.click(screen.getByRole("button", { name: "OpenAI 로그인 주소 열기" }));
     expect(openTrustedAuthentication).toHaveBeenCalledWith({
       url: "https://auth.openai.com/authorize?client=haksul",
     });
-    expect(screen.queryByRole("link", { name: "OpenAI 로그인 주소 열기" })).toBeNull();
     expect(document.querySelector('input[type="password"]')).toBeNull();
   });
 
-  test("falls back to a typed manual mode when the provider is offline", async () => {
+  test("falls back to typed manual mode without leaking provider errors", async () => {
     installApi({
       codexStatus: mock(
         async (_request: EmptyRequest): Promise<CodexStatusResponse> => ({
@@ -134,9 +133,9 @@ describe("official guidance and optional Codex provider", () => {
     render(<App />);
     await reachTracks(user);
 
-    const panel = await screen.findByTestId("provider-panel");
-    await waitFor(() => expect(panel.dataset.providerState).toBe("manual"));
-    expect(panel.textContent).not.toContain("SECRET");
-    expect(screen.queryByRole("button", { name: "Codex 제안 받기" })).toBeNull();
+    const workspace = await screen.findByTestId("agent-workspace");
+    await waitFor(() => expect(workspace.dataset.agentStatus).toBe("manual"));
+    expect(workspace.textContent).not.toContain("SECRET");
+    expect(workspace.textContent).toContain("수동 절차는 계속 사용할 수 있습니다");
   });
 });

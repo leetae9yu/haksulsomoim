@@ -1,6 +1,6 @@
 .integration-board {
   display: grid;
-  grid-template-columns: 6fr 4fr;
+  grid-template-columns: minmax(var(--rail-width), 3fr) minmax(calc(var(--rail-width) * 2), 7fr);
   gap: var(--space-5);
 }
 

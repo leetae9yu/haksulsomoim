@@ -2,9 +2,10 @@ import { useCallback, useState } from "react";
 import type {
   CivilTransitionRequest,
   CriminalTransitionRequest,
+  KoreanLawCitation,
   WorkflowSnapshot,
 } from "../../contracts/desktop-api";
-import { CodexPanel } from "./components/CodexPanel";
+import { AgentWorkspace } from "./AgentWorkspace";
 import { EnforcementPanel } from "./components/EnforcementPanel";
 import { GuidancePanel } from "./components/GuidancePanel";
 import { HandoffCards } from "./components/HandoffCards";
@@ -14,17 +15,27 @@ import { messages } from "./renderer-state";
 interface TrackBoardProps {
   readonly caseId: string;
   readonly confirmedText: string;
+  readonly contextDigest: string;
   readonly workflow: WorkflowSnapshot;
   readonly onWorkflowChange: (snapshot: WorkflowSnapshot) => void;
 }
 
-export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }: TrackBoardProps) {
+export function TrackBoard({
+  caseId,
+  confirmedText,
+  contextDigest,
+  workflow,
+  onWorkflowChange,
+}: TrackBoardProps) {
   const [criminalBusy, setCriminalBusy] = useState(false);
   const [civilBusy, setCivilBusy] = useState(false);
   const [criminalError, setCriminalError] = useState("");
   const [civilError, setCivilError] = useState("");
-  const [citationIds, setCitationIds] = useState<readonly string[]>([]);
-  const updateCitationIds = useCallback((ids: readonly string[]) => setCitationIds([...ids]), []);
+  const [citations, setCitations] = useState<readonly KoreanLawCitation[]>([]);
+  const updateCitations = useCallback(
+    (next: readonly KoreanLawCitation[]) => setCitations([...next]),
+    [],
+  );
 
   async function advanceCriminal(command: CriminalTransitionRequest["command"]) {
     const advance = window.haksul.advanceCriminal;
@@ -89,9 +100,13 @@ export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }
         />
         <EnforcementPanel caseId={caseId} civilState={workflow.civilState} />
       </section>
-      <section className="integration-board reveal" aria-label="공식 근거와 선택형 제안">
-        <GuidancePanel caseId={caseId} onCitationIds={updateCitationIds} />
-        <CodexPanel caseId={caseId} citationIds={citationIds} />
+      <section className="integration-board reveal" aria-label="공식 근거와 사건 Agent">
+        <GuidancePanel caseId={caseId} onCitations={updateCitations} />
+        <AgentWorkspace
+          caseId={caseId}
+          contextDigest={contextDigest}
+          officialCitationCount={citations.length}
+        />
       </section>
       <HandoffCards />
     </>

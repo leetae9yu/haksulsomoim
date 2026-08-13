@@ -14,12 +14,14 @@ export {
 } from "../main/agent/agent-contracts";
 export type {
   AgentApprovalDecisionIpcRequest,
+  AgentOfficialCitationProjection,
   AgentRunBinding,
   AgentRunEvent,
   AgentRunListRequest,
   AgentRunProjection,
   AgentRunResumeRequest,
   AgentRunStartIpcRequest,
+  AgentStepSummary,
 } from "../main/agent/agent-ipc-contracts";
 export {
   agentApprovalDecisionIpcRequestSchema,

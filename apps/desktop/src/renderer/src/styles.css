@@ -3,6 +3,7 @@
 @import "./styles/forms.css";
 @import "./styles/workflow.css";
 @import "./styles/integrations.css";
+@import "./styles/agent-workspace.css";
 
 * {
   box-sizing: border-box;
