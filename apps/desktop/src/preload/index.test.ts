@@ -28,6 +28,34 @@ describe("desktop preload bridge", () => {
     await expect(api.openAgentCase({ caseId: "case-1" })).rejects.toThrow();
   });
 
+  test("opens only a bounded app-owned Agent artifact projection", async () => {
+    const view = {
+      artifactId: "artifact-1",
+      artifactKind: "civil-demand",
+      title: "민사 초안",
+      sections: [{ heading: "마스킹된 사실", text: "안전한 내용" }],
+      citationIds: ["citation-1"],
+    };
+    const invoke = mock(async () => view);
+    const ipc = {
+      invoke,
+      send: mock(() => undefined),
+      on: mock(() => undefined),
+      removeListener: mock(() => undefined),
+    };
+    const api = createDesktopPreloadApi(ipc);
+    const request = {
+      caseId: "case-1",
+      runId: "run-1",
+      contextDigest: digest,
+      artifactId: "artifact-1",
+    } as const;
+    expect(JSON.stringify(await api.openAgentArtifact(request))).toBe(JSON.stringify(view));
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.agentArtifactOpen, request);
+    invoke.mockImplementation(async () => ({ ...view, rawPath: "/tmp/forbidden" }));
+    await expect(api.openAgentArtifact(request)).rejects.toThrow();
+  });
+
   test("exposes narrow lifecycle invokes without exposing raw ipcRenderer", async () => {
     const invoke = mock(async (_channel: string, _request: unknown) => ({
       caseId: "case-1",

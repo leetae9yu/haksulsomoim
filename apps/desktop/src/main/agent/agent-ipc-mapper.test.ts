@@ -89,6 +89,50 @@ describe("bounded Agent renderer projection", () => {
     expect(serialized).not.toContain(observationDigest);
   });
 
+  test("projects an opaque causal edge without exposing observation digests", () => {
+    const run = runFixture();
+    const started = run.steps.find((step) => step.kind === "tool-started");
+    if (started?.kind !== "tool-started") throw new Error("missing law-search fixture");
+    const search = {
+      ...started.toolCall,
+      basisObservationDigest: "d".repeat(64),
+    };
+    const causal = {
+      ...run,
+      steps: [
+        {
+          kind: "tool-started" as const,
+          stepId: "step-inspect-start",
+          decisionId: "decision-inspect",
+          toolCall: { toolName: "inspect-masked-case" as const, toolCallId: "tool-inspect" },
+        },
+        {
+          kind: "tool-finished" as const,
+          stepId: "step-inspect-finish",
+          result: {
+            toolName: "inspect-masked-case" as const,
+            toolCallId: "tool-inspect",
+            outcome: "completed" as const,
+            observationDigest: "d".repeat(64),
+          },
+        },
+        ...run.steps.map((step) =>
+          step.kind === "decision-recorded"
+            ? { ...step, decision: { ...step.decision, toolCall: search } }
+            : step.kind === "tool-started"
+              ? { ...step, toolCall: search }
+              : step,
+        ),
+      ],
+    };
+    const projection = toAgentRunProjection(causal);
+    const law = projection.steps.find(
+      (step) => step.kind === "tool-finished" && step.toolName === "search-official-law",
+    );
+    expect(law).toMatchObject({ dependsOnStepId: "step-inspect-finish" });
+    expect(JSON.stringify(projection)).not.toContain("d".repeat(64));
+  });
+
   test("rejects unlinked, unsafe, duplicate, or raw citation projections", () => {
     for (const unsafe of [
       { ...citation, stepId: "step-3" },

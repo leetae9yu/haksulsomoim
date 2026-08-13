@@ -7,7 +7,11 @@ import type { RuntimeCaseRepository } from "../runtime-case-types";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
 import type { AgentCaseProjectionReader, AgentLoopClock } from "./agent-loop-types";
 import type { AgentRunRepository } from "./agent-run-repository";
-import { type AgentOfficialLawResult, AgentToolRegistry } from "./agent-tool-registry";
+import {
+  type AgentEncryptedDraftWriter,
+  type AgentOfficialLawResult,
+  AgentToolRegistry,
+} from "./agent-tool-registry";
 
 export type AgentRuntimeExternalDependencies = Readonly<{
   law: KoreanLawMcpAdapter;
@@ -83,6 +87,7 @@ export function createAgentLoopDependencies(
     cases: RuntimeCaseRepository;
     redactor: Redactor;
     external: AgentRuntimeExternalDependencies;
+    drafts: AgentEncryptedDraftWriter;
     mutations: RuntimeCaseMutationQueue;
     clock?: AgentLoopClock;
   }>,
@@ -100,11 +105,7 @@ export function createAgentLoopDependencies(
         );
       },
     },
-    drafts: {
-      async write() {
-        return { status: "unavailable", reason: "writer-unavailable" };
-      },
-    },
+    drafts: input.drafts,
     redact: (caseId, value) => input.redactor.redact(caseId, value),
   });
   return {

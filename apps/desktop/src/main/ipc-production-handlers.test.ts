@@ -4,6 +4,7 @@ import type { CaseRuntimeService } from "./runtime-case-service";
 
 const lifecycle = {
   openCase: async () => ({}),
+  openArtifact: async () => ({}),
   start: async () => ({}),
   get: async () => ({}),
   list: async () => [],
@@ -19,6 +20,7 @@ describe("production desktop handler composition", () => {
     const handlers = createDesktopHandlers({} as CaseRuntimeService, lifecycle);
     const lifecycleMethods = [
       "openAgentCase",
+      "openAgentArtifact",
       "startAgentRun",
       "getAgentRun",
       "listAgentRuns",
@@ -29,6 +31,8 @@ describe("production desktop handler composition", () => {
       "subscribeAgentRun",
     ] as const;
 
-    expect(lifecycleMethods.filter((name) => typeof handlers[name] === "function")).toHaveLength(9);
+    expect(lifecycleMethods.filter((name) => typeof handlers[name] === "function")).toHaveLength(
+      10,
+    );
   });
 });

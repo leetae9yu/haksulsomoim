@@ -24,6 +24,8 @@ export interface AgentEncryptedDraftWriter {
       artifactKind: "civil-demand" | "criminal-complaint";
       contentDigest: string;
       idempotencyKey: string;
+      maskedFacts: AgentCaseProjection["maskedFacts"];
+      citationIds: readonly string[];
     }>,
   ): Promise<AgentDraftWriteResult>;
 }
@@ -90,10 +92,19 @@ export class AgentToolRegistry {
   ): void {
     switch (call.toolName) {
       case "inspect-masked-case":
-      case "search-official-law":
       case "compute-evidence-gaps":
       case "request-user-input":
       case "request-user-action":
+        return;
+      case "search-official-law":
+        if (
+          call.basisObservationDigest !== undefined &&
+          !approvedObservationDigests.includes(call.basisObservationDigest)
+        ) {
+          throw new AgentToolPolicyError(
+            "Official-law search basis must be a completed observation",
+          );
+        }
         return;
       case "read-official-law-detail":
         if (!approvedCitationIds.includes(call.citationId)) {
@@ -104,6 +115,9 @@ export class AgentToolRegistry {
         if (!approvedObservationDigests.includes(call.contentDigest)) {
           throw new AgentToolPolicyError("Local drafts require a completed observation");
         }
+        if (approvedCitationIds.length === 0) {
+          throw new AgentToolPolicyError("Local drafts require an official citation");
+        }
         return;
     }
   }
@@ -112,6 +126,7 @@ export class AgentToolRegistry {
     caseId: string,
     call: AgentToolCall,
     projection: AgentCaseProjection,
+    approvedCitationIds: readonly string[] = projection.citationIds,
   ): Promise<AgentToolExecution> {
     switch (call.toolName) {
       case "inspect-masked-case":
@@ -141,7 +156,7 @@ export class AgentToolRegistry {
           citationIds: [],
         };
       case "write-local-draft":
-        return this.#writeDraft(caseId, call);
+        return this.#writeDraft(caseId, call, projection, approvedCitationIds);
       case "request-user-input":
         return {
           status: "pending",
@@ -177,6 +192,8 @@ export class AgentToolRegistry {
   async #writeDraft(
     caseId: string,
     call: Extract<AgentToolCall, { toolName: "write-local-draft" }>,
+    projection: AgentCaseProjection,
+    citationIds: readonly string[],
   ): Promise<AgentToolExecution> {
     try {
       const result = await this.#dependencies.drafts.write({
@@ -184,6 +201,8 @@ export class AgentToolRegistry {
         artifactKind: call.artifactKind,
         contentDigest: call.contentDigest,
         idempotencyKey: call.toolCallId,
+        maskedFacts: projection.maskedFacts,
+        citationIds: [...new Set(citationIds)].slice(0, 24),
       });
       return result.status === "ok"
         ? { status: "completed", value: { artifactId: result.artifactId }, citationIds: [] }

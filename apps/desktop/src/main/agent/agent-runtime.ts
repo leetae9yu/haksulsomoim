@@ -2,44 +2,29 @@ import type { AgentRun } from "./agent-contracts";
 import { AgentLoopRunner } from "./agent-loop-runner";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
 import { AgentLoopService } from "./agent-loop-service";
-import type {
-  AgentLoopApprovalInput,
-  AgentLoopApprovalResolution,
-  AgentLoopStartInput,
-} from "./agent-loop-types";
+import type { AgentLoopStartInput } from "./agent-loop-types";
 import { AgentRunInvariantError, type AgentRunRepository } from "./agent-run-repository";
 import type { AgentRuntimeExternalDependencies } from "./agent-runtime-composition";
+import type {
+  AgentResumeInput,
+  AgentRuntimeBeginResult,
+  AgentRuntimeResult,
+  AgentUnavailableReason,
+  DesktopAgentRuntime,
+} from "./agent-runtime-types";
 
-export type AgentUnavailableReason = "provider-initialization" | "mcp-initialization";
-export type AgentRuntimeResult =
-  | Readonly<{ status: "completed"; run: AgentRun }>
-  | Readonly<{ status: "unavailable"; reason: AgentUnavailableReason }>;
-
-export type AgentResumeInput = Readonly<{
-  caseId: string;
-  runId: string;
-  approvedContextDigest: string;
-}>;
-
-export interface DesktopAgentRuntime {
-  openCase(caseId: string): Promise<
-    Readonly<{
-      contextDigest: string;
-      interruptedRun?: AgentRun;
-    }>
-  >;
-  start(input: AgentLoopStartInput): Promise<AgentRuntimeResult>;
-  resume(input: AgentResumeInput): Promise<AgentRuntimeResult>;
-  decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution>;
-  cancel(input: Readonly<{ caseId: string; runId: string }>): Promise<AgentRun>;
-  dispose(): Promise<void>;
-}
+export type {
+  AgentResumeInput,
+  AgentRuntimeBeginResult,
+  AgentRuntimeResult,
+  AgentUnavailableReason,
+  DesktopAgentRuntime,
+} from "./agent-runtime-types";
 
 type TrackedTask = Readonly<{ caseId: string; promise: Promise<unknown> }>;
 
 export class AgentRuntimeDisposedError extends Error {
   readonly code = "AGENT_RUNTIME_DISPOSED";
-
   constructor() {
     super("Agent runtime is disposed");
     this.name = "AgentRuntimeDisposedError";
@@ -53,6 +38,7 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
   readonly #service: AgentLoopService;
   readonly #tasks = new Set<TrackedTask>();
   readonly #resumed = new Map<string, AgentLoopRunner>();
+  readonly #listeners = new Set<(run: AgentRun) => void>();
   readonly #abort = new AbortController();
   #availability?: Promise<AgentUnavailableReason | undefined>;
   #disposal?: Promise<void>;
@@ -63,10 +49,10 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     external: AgentRuntimeExternalDependencies,
     runs: AgentRunRepository,
   ) {
-    this.#dependencies = dependencies;
+    this.#dependencies = { ...dependencies, publish: (run) => this.#publish(run) };
     this.#external = external;
     this.#runs = runs;
-    this.#service = new AgentLoopService(dependencies);
+    this.#service = new AgentLoopService(this.#dependencies);
   }
 
   async openCase(caseId: string) {
@@ -79,47 +65,56 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     };
   }
 
-  start(input: AgentLoopStartInput): Promise<AgentRuntimeResult> {
+  begin(input: AgentLoopStartInput): Promise<AgentRuntimeBeginResult> {
     if (this.#disposed) return Promise.reject(new AgentRuntimeDisposedError());
     return this.#track(input.caseId, async (signal) => {
       const unavailable = await this.#initialize(signal);
       if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
-      return { status: "completed", run: await this.#service.start(input) };
+      const execution = await this.#service.begin(input);
+      return {
+        status: "started",
+        run: execution.initial,
+        completion: this.#adopt(input.caseId, execution.completion),
+      };
     });
   }
 
-  resume(input: AgentResumeInput): Promise<AgentRuntimeResult> {
+  async start(input: AgentLoopStartInput): Promise<AgentRuntimeResult> {
+    const begun = await this.begin(input);
+    if (begun.status === "unavailable") return begun;
+    return { status: "completed", run: await begun.completion };
+  }
+
+  beginResume(input: AgentResumeInput): Promise<AgentRuntimeBeginResult> {
     if (this.#disposed) return Promise.reject(new AgentRuntimeDisposedError());
     return this.#track(input.caseId, async (signal) => {
       const unavailable = await this.#initialize(signal);
       if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
-      const runner = await this.#dependencies.mutations.run(input.caseId, async () => {
-        const snapshot = await this.#runs.load(input.runId);
-        if (snapshot.run.caseId !== input.caseId) {
-          throw new AgentRunInvariantError("Agent run case mismatch");
-        }
-        const projection = await this.#dependencies.projections.load(input.caseId);
-        if (projection.contextDigest !== input.approvedContextDigest) {
-          throw new AgentRunInvariantError("Interrupted Agent context changed before resume");
-        }
-        const resumed = await this.#runs.resumeOwned(snapshot);
-        const active = new AgentLoopRunner(this.#dependencies, {
-          caseId: input.caseId,
-          runId: input.runId,
-          approvedContextDigest: input.approvedContextDigest,
-          citationIds: projection.citationIds,
-          snapshot: resumed,
-        });
-        this.#resumed.set(input.caseId, active);
-        return active;
-      });
-      const run = await runner.drive();
-      await this.#releaseResumed(runner, run);
-      return { status: "completed", run };
+      const execution = await this.#resumeExecution(input);
+      return {
+        status: "started",
+        run: execution.run,
+        completion: this.#adopt(input.caseId, execution.completion),
+      };
     });
   }
 
-  decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution> {
+  async resume(input: AgentResumeInput): Promise<AgentRuntimeResult> {
+    const begun = await this.beginResume(input);
+    if (begun.status === "unavailable") return begun;
+    return { status: "completed", run: await begun.completion };
+  }
+
+  async pause(input: Readonly<{ caseId: string; runId: string }>): Promise<AgentRun> {
+    const resumed = this.#resumed.get(input.caseId);
+    if (resumed === undefined) return this.#service.pause(input);
+    if (resumed.runId !== input.runId) throw new AgentRunInvariantError("Agent run ID mismatch");
+    const run = await resumed.pause();
+    await this.#releaseResumed(resumed, run);
+    return run;
+  }
+
+  decideApproval(input: Parameters<DesktopAgentRuntime["decideApproval"]>[0]) {
     this.#assertOpen();
     return this.#service.decideApproval(input);
   }
@@ -133,12 +128,47 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     return run;
   }
 
+  subscribe(listener: (run: AgentRun) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
   dispose(): Promise<void> {
     if (this.#disposal !== undefined) return this.#disposal;
     this.#disposed = true;
     this.#abort.abort();
     this.#disposal = this.#settle();
     return this.#disposal;
+  }
+
+  async #resumeExecution(input: AgentResumeInput) {
+    return this.#dependencies.mutations.run(input.caseId, async () => {
+      const snapshot = await this.#runs.load(input.runId);
+      if (snapshot.run.caseId !== input.caseId) {
+        throw new AgentRunInvariantError("Agent run case mismatch");
+      }
+      const projection = await this.#dependencies.projections.load(input.caseId);
+      if (projection.contextDigest !== input.approvedContextDigest) {
+        throw new AgentRunInvariantError("Interrupted Agent context changed before resume");
+      }
+      const resumed = await this.#runs.resumeOwned(snapshot);
+      const runner = new AgentLoopRunner(this.#dependencies, {
+        caseId: input.caseId,
+        runId: input.runId,
+        approvedContextDigest: input.approvedContextDigest,
+        citationIds: projection.citationIds,
+        snapshot: resumed,
+      });
+      this.#resumed.set(input.caseId, runner);
+      this.#publish(resumed.run);
+      return { run: resumed.run, completion: this.#completeResumed(runner) };
+    });
+  }
+
+  async #completeResumed(runner: AgentLoopRunner): Promise<AgentRun> {
+    const run = await runner.drive();
+    await this.#releaseResumed(runner, run);
+    return run;
   }
 
   async #settle(): Promise<void> {
@@ -179,18 +209,19 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     return availability;
   }
 
-  async #track<Result>(
-    caseId: string,
-    operation: (signal: AbortSignal) => Promise<Result>,
-  ): Promise<Result> {
-    const promise = Promise.resolve().then(() => operation(this.#abort.signal));
-    const tracked: TrackedTask = { caseId, promise };
-    this.#tasks.add(tracked);
-    try {
-      return await promise;
-    } finally {
-      this.#tasks.delete(tracked);
-    }
+  #track<Result>(caseId: string, operation: (signal: AbortSignal) => Promise<Result>) {
+    return this.#adopt(
+      caseId,
+      Promise.resolve().then(() => operation(this.#abort.signal)),
+    );
+  }
+
+  #adopt<Result>(caseId: string, promise: Promise<Result>): Promise<Result> {
+    let task: TrackedTask;
+    const tracked = promise.finally(() => this.#tasks.delete(task));
+    task = { caseId, promise: tracked };
+    this.#tasks.add(task);
+    return tracked;
   }
 
   async #releaseResumed(runner: AgentLoopRunner, run: AgentRun): Promise<void> {
@@ -202,10 +233,13 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     });
   }
 
+  #publish(run: AgentRun): void {
+    for (const listener of this.#listeners) listener(run);
+  }
+
   #assertAdmitted(signal: AbortSignal): void {
     if (signal.aborted || this.#disposed) throw new AgentRuntimeDisposedError();
   }
-
   #assertOpen(): void {
     if (this.#disposed) throw new AgentRuntimeDisposedError();
   }

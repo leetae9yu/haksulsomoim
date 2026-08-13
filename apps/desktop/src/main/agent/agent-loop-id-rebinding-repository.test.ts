@@ -86,13 +86,18 @@ describe("encrypted Agent ID rebinding", () => {
         },
       },
     });
+    const projections = new MutableProjectionReader();
+    projections.projection = {
+      ...projections.projection,
+      citationIds: ["citation-1"],
+    };
     let decisionNumber = 0;
     let toolNumber = 0;
     let approvalNumber = 0;
     let stepNumber = 0;
     const service = new AgentLoopService({
       runs,
-      projections: new MutableProjectionReader(),
+      projections,
       provider: async () => provider,
       tools,
       mutations: new RuntimeCaseMutationQueue(),

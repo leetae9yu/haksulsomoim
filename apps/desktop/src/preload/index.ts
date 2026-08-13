@@ -2,6 +2,7 @@ import electron from "electron";
 import {
   type AgentRunEvent,
   type AgentRunProjection,
+  agentArtifactViewSchema,
   agentCaseContextSchema,
   agentRunEventSchema,
   agentRunListResponseSchema,
@@ -51,6 +52,11 @@ export function createDesktopPreloadApi(ipc: PreloadIpcPort): Required<DesktopAp
     codexSuggestion: (request) => invoke(IPC_CHANNELS.codexSuggestion, request),
     async openAgentCase(request) {
       return agentCaseContextSchema.parse(await ipc.invoke(IPC_CHANNELS.agentCaseOpen, request));
+    },
+    async openAgentArtifact(request) {
+      return agentArtifactViewSchema.parse(
+        await ipc.invoke(IPC_CHANNELS.agentArtifactOpen, request),
+      );
     },
     async startAgentRun(request) {
       return projection(await ipc.invoke(IPC_CHANNELS.agentRunStart, request));

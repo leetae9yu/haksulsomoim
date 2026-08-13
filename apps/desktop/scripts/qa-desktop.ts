@@ -20,7 +20,8 @@ function requireScenario(arguments_: readonly string[]): DesktopQaScenario {
     scenario !== "happy" &&
     scenario !== "malformed" &&
     scenario !== "agent-happy" &&
-    scenario !== "agent-approval"
+    scenario !== "agent-approval" &&
+    scenario !== "agent-live-controls"
   ) {
     throw new TypeError("--scenario is not supported");
   }
@@ -123,7 +124,11 @@ try {
   });
   await reachTracks(page, scenario, actions);
 
-  if (scenario === "agent-happy" || scenario === "agent-approval") {
+  if (
+    scenario === "agent-happy" ||
+    scenario === "agent-approval" ||
+    scenario === "agent-live-controls"
+  ) {
     await runAgentScenario(page, scenario, actions, evidenceDirectory);
   } else if (scenario === "malformed") {
     await page.getByText("캡처에서 문자를 읽지 못했습니다.").waitFor();

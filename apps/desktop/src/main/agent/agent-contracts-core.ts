@@ -14,6 +14,7 @@ export const agentRunIdSchema = semanticId.brand<"AgentRunId">();
 export const agentStepIdSchema = semanticId.brand<"AgentStepId">();
 export const agentDecisionIdSchema = semanticId.brand<"AgentDecisionId">();
 export const agentToolCallIdSchema = semanticId.brand<"AgentToolCallId">();
+export const agentArtifactIdSchema = semanticId.brand<"AgentArtifactId">();
 export const approvalIdSchema = semanticId.brand<"ApprovalId">();
 export const approvalDigestSchema = digest.brand<"ApprovalDigest">();
 export const contextDigestSchema = digest.brand<"ContextDigest">();
@@ -87,6 +88,7 @@ export const interruptionSchema = z
       z.literal("user-cancelled"),
       z.literal("provider-timeout"),
       z.literal("application-restarted"),
+      z.literal("user-paused"),
     ]),
   })
   .readonly();

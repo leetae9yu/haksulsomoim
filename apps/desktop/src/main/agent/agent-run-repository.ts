@@ -202,8 +202,11 @@ export class AgentRunRepository {
 
   async resumeOwned(snapshot: AgentRunSnapshot): Promise<AgentRunSnapshot> {
     const previous = { run: agentRunSchema.parse(snapshot.run), cursor: snapshot.cursor };
-    if (previous.run.state.kind !== "interrupted") {
-      throw new AgentRunInvariantError("Only interrupted Agent runs may be resumed");
+    if (
+      previous.run.state.kind !== "interrupted" &&
+      !(previous.run.state.kind === "paused" && previous.run.state.reason === "user-paused")
+    ) {
+      throw new AgentRunInvariantError("Only interrupted or user-paused Agent runs may be resumed");
     }
     const resumed = {
       run: agentRunSchema.parse({ ...previous.run, state: { kind: "active" } }),
@@ -215,11 +218,16 @@ export class AgentRunRepository {
     return resumed;
   }
 
-  async load(runId: string): Promise<AgentRunSnapshot> {
+  async readCurrent(runId: string): Promise<AgentRunSnapshot> {
     if (runId.length === 0) throw new TypeError("An Agent run ID is required");
     const snapshot = await this.#store.read(runId);
     assertSafeAgentText(snapshot.run);
     assertUniqueHistory(snapshot.run.steps);
+    return snapshot;
+  }
+
+  async load(runId: string): Promise<AgentRunSnapshot> {
+    const snapshot = await this.readCurrent(runId);
     if (snapshot.run.state.kind !== "active") {
       await this.#ownership.release(snapshot.run.caseId, runId);
       return snapshot;

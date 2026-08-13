@@ -64,9 +64,26 @@ describe("Korean Agent workspace", () => {
     const tools = [...document.querySelectorAll("[data-agent-tool]")].map((node) =>
       node.getAttribute("data-agent-tool"),
     );
-    expect(new Set(tools)).toEqual(new Set(["inspect-masked-case", "search-official-law"]));
-    expect(document.querySelectorAll("[data-agent-step]").length).toBeGreaterThanOrEqual(2);
-    await user.click(screen.getByRole("link", { name: "민사집행법 공식 원문 열기" }));
+    expect(new Set(tools)).toEqual(
+      new Set(["inspect-masked-case", "search-official-law", "write-local-draft"]),
+    );
+    expect(document.querySelectorAll("[data-agent-step]").length).toBeGreaterThanOrEqual(3);
+    expect(
+      document
+        .querySelector('[data-agent-tool="search-official-law"]')
+        ?.getAttribute("data-agent-depends-on"),
+    ).toBe("step-inspect-done");
+    await user.click(screen.getByRole("button", { name: "암호화 초안 열기" }));
+    expect(api.openAgentArtifact).toHaveBeenCalledWith({
+      caseId: "case-1",
+      runId: "run-case-1",
+      contextDigest,
+      artifactId: "artifact-1",
+    });
+    expect(await screen.findByRole("dialog", { name: "민사 지급명령 검토 초안" })).toBeTruthy();
+    const officialLinks = screen.getAllByRole("link", { name: "민사집행법 공식 원문 열기" });
+    expect(officialLinks.length).toBeGreaterThan(0);
+    await user.click(officialLinks[0] as HTMLElement);
     expect(api.openOfficialSource).toHaveBeenCalledWith({
       url: "https://law.go.kr/법령/민사집행법",
     });

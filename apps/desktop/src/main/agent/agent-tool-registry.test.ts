@@ -92,6 +92,8 @@ describe("closed Agent tool registry", () => {
         artifactKind: "civil-demand",
         contentDigest: "b".repeat(64),
         idempotencyKey: "draft-1",
+        maskedFacts: projection.maskedFacts,
+        citationIds: ["citation-1"],
       },
     ]);
   });

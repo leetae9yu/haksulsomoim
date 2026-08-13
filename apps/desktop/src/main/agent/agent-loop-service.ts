@@ -1,5 +1,9 @@
 import { type AgentRun, agentGoalSchema, approvalDecisionSchema } from "./agent-contracts";
-import { pauseIdleAgentRun, recordAgentApproval } from "./agent-loop-boundary-reducer";
+import {
+  cancelAgentRun,
+  pauseIdleAgentRun,
+  recordAgentApproval,
+} from "./agent-loop-boundary-reducer";
 import { commitAgentRun } from "./agent-loop-checkpoints";
 import { pendingApproval } from "./agent-loop-decisions";
 import { AgentLoopAlreadyActiveError, AgentLoopStateError } from "./agent-loop-errors";
@@ -15,6 +19,10 @@ import type {
 
 export type { AgentLoopClock, AgentLoopProvider } from "./agent-loop-types";
 export type AgentLoopServiceDependencies = AgentLoopRuntimeDependencies;
+export type AgentLoopExecution = Readonly<{
+  initial: AgentRun;
+  completion: Promise<AgentRun>;
+}>;
 
 export class AgentLoopService {
   readonly #dependencies: AgentLoopRuntimeDependencies;
@@ -25,6 +33,10 @@ export class AgentLoopService {
   }
 
   async start(input: AgentLoopStartInput): Promise<AgentRun> {
+    return (await this.begin(input)).completion;
+  }
+
+  async begin(input: AgentLoopStartInput): Promise<AgentLoopExecution> {
     const prepared = await this.#dependencies.mutations.run(input.caseId, async () => {
       if (this.#active.has(input.caseId)) throw new AgentLoopAlreadyActiveError(input.caseId);
       const goal = agentGoalSchema.parse(input.goal);
@@ -51,10 +63,14 @@ export class AgentLoopService {
       this.#active.set(input.caseId, runner);
       return { run, runner };
     });
-    if (prepared.runner === undefined) return prepared.run;
-    const run = await prepared.runner.drive();
-    await this.#releaseRunner(prepared.runner, run);
-    return run;
+    this.#dependencies.publish?.(prepared.run);
+    if (prepared.runner === undefined) {
+      return { initial: prepared.run, completion: Promise.resolve(prepared.run) };
+    }
+    return {
+      initial: prepared.run,
+      completion: this.#completeRunner(prepared.runner),
+    };
   }
 
   activeRuns(): readonly AgentLoopRunReference[] {
@@ -64,14 +80,43 @@ export class AgentLoopService {
     }));
   }
 
-  async cancel(input: AgentLoopRunReference): Promise<AgentRun> {
+  async pause(input: AgentLoopRunReference): Promise<AgentRun> {
     const runner = this.#active.get(input.caseId);
     if (runner === undefined || runner.runId !== input.runId) {
       throw new AgentLoopStateError("The requested Agent run is not active for this case");
     }
-    const run = await runner.cancel();
+    const run = await runner.pause();
     await this.#releaseRunner(runner, run);
     return run;
+  }
+
+  async cancel(input: AgentLoopRunReference): Promise<AgentRun> {
+    const runner = this.#active.get(input.caseId);
+    if (runner !== undefined) {
+      if (runner.runId !== input.runId) {
+        throw new AgentLoopStateError("The requested Agent run is not active for this case");
+      }
+      const run = await runner.cancel();
+      await this.#releaseRunner(runner, run);
+      return run;
+    }
+    return this.#dependencies.mutations.run(input.caseId, async () => {
+      const snapshot = await this.#dependencies.runs.load(input.runId);
+      this.#assertCase(snapshot.run, input.caseId);
+      if (
+        snapshot.run.state.kind === "interrupted" &&
+        snapshot.run.state.interruption.kind === "user-cancelled"
+      ) {
+        return snapshot.run;
+      }
+      if (snapshot.run.state.kind === "active" || snapshot.run.state.kind === "terminal") {
+        throw new AgentLoopStateError("The requested Agent run cannot be cancelled");
+      }
+      const run = cancelAgentRun(snapshot.run, this.#dependencies.identifiers.nextStepId());
+      await commitAgentRun(this.#dependencies.runs, snapshot, run, true);
+      this.#dependencies.publish?.(run);
+      return run;
+    });
   }
 
   async decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution> {
@@ -111,8 +156,15 @@ export class AgentLoopService {
         this.#dependencies.identifiers.nextStepId(),
       );
       await commitAgentRun(this.#dependencies.runs, snapshot, run, true);
+      this.#dependencies.publish?.(run);
       return { status: "recorded", run };
     });
+  }
+
+  async #completeRunner(runner: AgentLoopRunner): Promise<AgentRun> {
+    const run = await runner.drive();
+    await this.#releaseRunner(runner, run);
+    return run;
   }
 
   async #releaseRunner(runner: AgentLoopRunner, run: AgentRun): Promise<void> {

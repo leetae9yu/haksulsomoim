@@ -70,6 +70,7 @@ export function registerDesktopIpcWith(
     [IPC_CHANNELS.codexLogin, handlers.codexLogin],
     [IPC_CHANNELS.codexSuggestion, handlers.codexSuggestion],
     [IPC_CHANNELS.agentCaseOpen, handlers.openAgentCase],
+    [IPC_CHANNELS.agentArtifactOpen, handlers.openAgentArtifact],
     [IPC_CHANNELS.agentRunStart, handlers.startAgentRun],
     [IPC_CHANNELS.agentRunGet, handlers.getAgentRun],
     [IPC_CHANNELS.agentRunList, handlers.listAgentRuns],

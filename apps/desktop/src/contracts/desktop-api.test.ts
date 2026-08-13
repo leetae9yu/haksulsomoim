@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   agentApprovalDecisionIpcRequestSchema,
   agentApprovalDecisionRequestSchema,
+  agentArtifactOpenRequestSchema,
+  agentArtifactViewSchema,
   agentCaseContextSchema,
   agentCaseOpenRequestSchema,
   agentRunListResponseSchema,
@@ -110,6 +112,28 @@ describe("desktop IPC contracts", () => {
         providerId: "forged",
       }).success,
     ).toBe(false);
+  });
+
+  test("bounds app-owned Agent artifact opening without paths or provider payloads", () => {
+    const request = {
+      caseId: "case-1",
+      runId: "run-1",
+      contextDigest: "a".repeat(64),
+      artifactId: "artifact-1",
+    };
+    const view = {
+      artifactId: "artifact-1",
+      artifactKind: "civil-demand",
+      title: "민사 초안",
+      sections: [{ heading: "요약", text: "마스킹된 사실" }],
+      citationIds: ["citation-1"],
+    };
+    expect(agentArtifactOpenRequestSchema.safeParse(request).success).toBe(true);
+    expect(
+      agentArtifactOpenRequestSchema.safeParse({ ...request, rawPath: "/tmp/x" }).success,
+    ).toBe(false);
+    expect(agentArtifactViewSchema.safeParse(view).success).toBe(true);
+    expect(agentArtifactViewSchema.safeParse({ ...view, providerPayload: {} }).success).toBe(false);
   });
 
   test("closes Agent lifecycle inputs and bounds renderer user input", () => {

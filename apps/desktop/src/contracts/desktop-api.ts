@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 export type {
+  AgentArtifactOpenRequest,
+  AgentArtifactView,
+} from "../main/agent/agent-artifact-ipc-contracts";
+export {
+  agentArtifactOpenRequestSchema,
+  agentArtifactViewSchema,
+} from "../main/agent/agent-artifact-ipc-contracts";
+export type {
   ActiveAgentRun,
   AgentApprovalDecisionRequest,
   AgentRun,
@@ -39,6 +47,10 @@ export {
   agentRunSubscribeRequestSchema,
 } from "../main/agent/agent-ipc-contracts";
 
+import type {
+  AgentArtifactOpenRequest,
+  AgentArtifactView,
+} from "../main/agent/agent-artifact-ipc-contracts";
 import type {
   AgentApprovalDecisionIpcRequest,
   AgentCaseContext,
@@ -236,6 +248,7 @@ export interface DesktopApi {
   codexLogin?(request: EmptyRequest): Promise<CodexLoginResponse>;
   codexSuggestion?(request: CodexSuggestionRequest): Promise<CodexSuggestionResponse>;
   openAgentCase?(request: AgentCaseOpenRequest): Promise<AgentCaseContext>;
+  openAgentArtifact?(request: AgentArtifactOpenRequest): Promise<AgentArtifactView>;
   startAgentRun?(request: AgentRunStartIpcRequest): Promise<AgentRunProjection>;
   getAgentRun?(request: AgentRunBinding): Promise<AgentRunProjection>;
   listAgentRuns?(request: AgentRunListRequest): Promise<readonly AgentRunProjection[]>;

@@ -8,11 +8,13 @@ import {
   needsUserInput,
   statusMessage,
 } from "./agent-workspace-state";
+import type { AgentArtifactControl } from "./use-agent-artifact";
 
 type GoalChoice = "civil" | "criminal" | undefined;
 
 interface AgentWorkspaceViewProps {
   readonly approvalRef: RefObject<HTMLDivElement | null>;
+  readonly artifactControl: AgentArtifactControl;
   readonly busy: boolean;
   readonly caseId: string;
   readonly consent: boolean;
@@ -237,7 +239,7 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
               </div>
             </div>
           )}
-          <AgentTimeline projection={props.projection} />
+          <AgentTimeline artifactControl={props.artifactControl} projection={props.projection} />
         </>
       )}
       {props.error.length > 0 && (

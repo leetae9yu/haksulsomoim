@@ -1,6 +1,7 @@
 import type { AgentRunProjection, AgentStepSummary } from "../../contracts/desktop-api";
 import { stepLabel } from "./agent-workspace-state";
 import { OfficialLink } from "./components/OfficialLink";
+import type { AgentArtifactControl } from "./use-agent-artifact";
 
 function stepMeta(step: AgentStepSummary): string {
   if (step.kind === "tool-finished") {
@@ -15,15 +16,24 @@ function stepMeta(step: AgentStepSummary): string {
   return "호스트가 순서와 예산을 확인했습니다.";
 }
 
-export function AgentTimeline({ projection }: { readonly projection: AgentRunProjection }) {
-  const hasDraft = projection.steps.some(
-    (step) =>
-      step.kind === "tool-finished" &&
-      step.toolName === "write-local-draft" &&
-      step.outcome === "completed",
+export function AgentTimeline({
+  artifactControl,
+  projection,
+}: {
+  readonly artifactControl: AgentArtifactControl;
+  readonly projection: AgentRunProjection;
+}) {
+  const artifacts = projection.steps.filter(
+    (step): step is Extract<AgentStepSummary, { kind: "tool-finished" }> & { artifactId: string } =>
+      step.kind === "tool-finished" && step.artifactId !== undefined,
   );
   const completed =
     projection.state.kind === "terminal" && projection.state.outcome.kind === "completed";
+  const openedCitations =
+    artifactControl.view?.citationIds.flatMap((id) => {
+      const citation = projection.citations.find((candidate) => candidate.citationId === id);
+      return citation === undefined ? [] : [citation];
+    }) ?? [];
 
   return (
     <section className="agent-timeline-panel" aria-labelledby="agent-timeline-title">
@@ -42,6 +52,9 @@ export function AgentTimeline({ projection }: { readonly projection: AgentRunPro
             <li
               data-agent-step={step.stepId}
               {...(step.kind === "tool-finished" ? { "data-agent-tool": step.toolName } : {})}
+              {...(step.kind === "tool-finished" && step.dependsOnStepId !== undefined
+                ? { "data-agent-depends-on": step.dependsOnStepId }
+                : {})}
               key={step.stepId}
             >
               <span className="agent-step-index" aria-hidden="true">
@@ -55,12 +68,42 @@ export function AgentTimeline({ projection }: { readonly projection: AgentRunPro
           ))}
         </ol>
       )}
-      {hasDraft && (
-        <details className="agent-artifact" data-agent-artifact="encrypted-draft">
-          <summary>암호화 초안 상태 보기</summary>
-          <p>초안은 이 앱의 암호화 저장소에만 보관되며 외부 파일 경로를 노출하지 않습니다.</p>
-        </details>
+      {artifacts.map((artifact) => (
+        <button
+          className="button-secondary agent-artifact-open"
+          data-agent-artifact={artifact.artifactId}
+          disabled={artifactControl.busy}
+          key={artifact.artifactId}
+          onClick={() => artifactControl.open(artifact.artifactId)}
+          type="button"
+        >
+          {artifactControl.busy ? "암호화 초안 여는 중…" : "암호화 초안 열기"}
+        </button>
+      ))}
+      {artifactControl.view !== undefined && (
+        <section
+          aria-label={artifactControl.view.title}
+          className="agent-artifact"
+          data-agent-artifact-view={artifactControl.view.artifactId}
+          role="dialog"
+        >
+          <h4>{artifactControl.view.title}</h4>
+          {artifactControl.view.sections.map((section) => (
+            <section key={section.heading}>
+              <h5>{section.heading}</h5>
+              <p>{section.text}</p>
+            </section>
+          ))}
+          <ul className="agent-citation-links">
+            {openedCitations.map((citation) => (
+              <li data-agent-artifact-citation={citation.citationId} key={citation.citationId}>
+                <OfficialLink url={citation.sourceUrl}>{citation.law} 공식 원문 열기</OfficialLink>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
+      {artifactControl.error.length > 0 && <p role="alert">{artifactControl.error}</p>}
       {completed && (
         <section className="agent-final-plan" aria-label="인용된 최종 실행 계획">
           <span className="panel-kicker">CITED PLAN</span>

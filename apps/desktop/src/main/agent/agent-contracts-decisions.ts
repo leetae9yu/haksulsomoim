@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  agentArtifactIdSchema,
   agentDecisionIdSchema,
   agentStepIdSchema,
   agentToolCallIdSchema,
@@ -25,6 +26,7 @@ const searchOfficialLawToolCallSchema = z
     toolName: z.literal("search-official-law"),
     toolCallId: agentToolCallIdSchema,
     query: boundedText,
+    basisObservationDigest: observationDigestSchema.optional(),
   })
   .readonly();
 const readOfficialLawDetailToolCallSchema = z
@@ -82,13 +84,17 @@ const toolResult = <TToolName extends AgentToolCall["toolName"]>(toolName: TTool
       observationDigest: observationDigestSchema,
     })
     .readonly();
+const draftToolResultSchema = toolResult("write-local-draft")
+  .unwrap()
+  .extend({ artifactId: agentArtifactIdSchema.optional() })
+  .readonly();
 
 export const agentToolResultSchema = z.discriminatedUnion("toolName", [
   toolResult("inspect-masked-case"),
   toolResult("search-official-law"),
   toolResult("read-official-law-detail"),
   toolResult("compute-evidence-gaps"),
-  toolResult("write-local-draft"),
+  draftToolResultSchema,
   toolResult("request-user-input"),
   toolResult("request-user-action"),
 ]);

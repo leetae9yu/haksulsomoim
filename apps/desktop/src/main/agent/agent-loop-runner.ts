@@ -9,6 +9,7 @@ import {
 import {
   cancelActiveAgentRun,
   finishAgentToolTurn,
+  pauseActiveAgentRun,
   pauseAgentProviderTurn,
   pauseAgentRunWithoutTurn,
 } from "./agent-loop-settlements";
@@ -83,7 +84,7 @@ export class AgentLoopRunner {
         requestProviderTurn(this.#control.provider, prepared.context),
         awaitCancellation(this.#control.cancellationRequested),
       ]);
-      if (turn.kind === "cancelled" || this.#control.cancelled) return this.#cancelledRun();
+      if (turn.kind === "cancelled" || this.#stopping()) return this.#stoppedRun();
       if (turn.kind === "failed") {
         return pauseAgentProviderTurn(this.#dependencies, this.#control);
       }
@@ -106,13 +107,14 @@ export class AgentLoopRunner {
       );
       if (accepted.kind === "stop") return accepted.run;
       if (accepted.kind === "continue") continue;
-      if (this.#control.cancelled) return this.#cancelledRun();
+      if (this.#stopping()) return this.#stoppedRun();
       const execution = await this.#dependencies.tools.execute(
         this.#control.caseId,
         accepted.call,
         accepted.projection,
+        [...this.#control.citationIds],
       );
-      if (this.#control.cancelled) return this.#cancelledRun();
+      if (this.#stopping()) return this.#stoppedRun();
       const observation = this.#dependencies.tools.prepareObservation(
         this.#control.caseId,
         accepted.call,
@@ -129,20 +131,32 @@ export class AgentLoopRunner {
     }
   }
 
+  pause(): Promise<AgentRun> {
+    if (this.#control.cancellation !== undefined) return this.#control.cancellation;
+    if (this.#control.pause !== undefined) return this.#control.pause;
+    const request = this.#persistAndInterrupt("pause");
+    this.#control.pause = request;
+    this.#control.requestCancellation();
+    return request;
+  }
+
   cancel(): Promise<AgentRun> {
     if (this.#control.cancellation !== undefined) return this.#control.cancellation;
+    if (this.#control.pause !== undefined) return this.#control.pause;
     this.#control.cancelled = true;
-    const request = this.#persistAndInterruptCancellation();
+    const request = this.#persistAndInterrupt("cancel");
     this.#control.cancellation = request;
     this.#control.requestCancellation();
     return request;
   }
 
-  async #persistAndInterruptCancellation(): Promise<AgentRun> {
+  async #persistAndInterrupt(kind: "pause" | "cancel"): Promise<AgentRun> {
     let persistenceFailure: unknown;
     let run: AgentRun | undefined;
     try {
-      run = await cancelActiveAgentRun(this.#dependencies, this.#control);
+      run = await (kind === "pause"
+        ? pauseActiveAgentRun(this.#dependencies, this.#control)
+        : cancelActiveAgentRun(this.#dependencies, this.#control));
     } catch (error) {
       persistenceFailure = error;
     }
@@ -152,18 +166,23 @@ export class AgentLoopRunner {
       if (persistenceFailure !== undefined) {
         throw new AggregateError(
           [persistenceFailure, interruptFailure],
-          "Agent cancellation persistence and transport interruption failed",
+          "Agent settlement persistence and transport interruption failed",
         );
       }
-      // Persisted host cancellation is authoritative when transport interruption fails.
+      // A durably persisted host pause or cancellation remains authoritative.
     }
     if (persistenceFailure !== undefined) throw persistenceFailure;
-    if (run === undefined) throw new AgentLoopStateError("Agent cancellation did not settle");
+    if (run === undefined) throw new AgentLoopStateError("Agent settlement did not persist");
     return run;
   }
 
-  async #cancelledRun(): Promise<AgentRun> {
-    if (this.#control.cancellation !== undefined) return this.#control.cancellation;
-    throw new AgentLoopStateError("Agent cancellation was not persisted");
+  #stopping(): boolean {
+    return this.#control.cancelled || this.#control.pause !== undefined;
+  }
+
+  async #stoppedRun(): Promise<AgentRun> {
+    const settlement = this.#control.cancellation ?? this.#control.pause;
+    if (settlement !== undefined) return settlement;
+    throw new AgentLoopStateError("Agent settlement was not persisted");
   }
 }

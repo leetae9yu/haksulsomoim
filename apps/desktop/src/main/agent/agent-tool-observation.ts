@@ -35,6 +35,15 @@ export function prepareAgentObservation(
   ).slice(0, agentObservationTextLimit);
   const observationDigest = createHash("sha256").update(summary).digest("hex");
   const outcome = execution.status === "unavailable" ? "unavailable" : "completed";
+  const artifactId =
+    call.toolName === "write-local-draft" &&
+    execution.status === "completed" &&
+    typeof execution.value === "object" &&
+    execution.value !== null &&
+    "artifactId" in execution.value &&
+    typeof execution.value.artifactId === "string"
+      ? execution.value.artifactId
+      : undefined;
   return {
     summary: redact(caseId, summary),
     result: agentToolResultSchema.parse({
@@ -42,6 +51,7 @@ export function prepareAgentObservation(
       toolCallId: call.toolCallId,
       outcome,
       observationDigest,
+      ...(artifactId === undefined ? {} : { artifactId }),
     }),
   };
 }

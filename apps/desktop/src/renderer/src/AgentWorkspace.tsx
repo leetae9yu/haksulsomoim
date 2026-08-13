@@ -3,7 +3,9 @@ import type { AgentRunProjection } from "../../contracts/desktop-api";
 import { useAgentProvider } from "./AgentProviderStatus";
 import { AgentWorkspaceView } from "./AgentWorkspaceView";
 import { agentGoal } from "./agent-workspace-goal";
+import { acceptAgentProjection } from "./agent-workspace-projection";
 import { type AgentProviderState, agentUiStatus } from "./agent-workspace-state";
+import { useAgentArtifact } from "./use-agent-artifact";
 
 type GoalChoice = "civil" | "criminal" | undefined;
 interface AgentWorkspaceProps {
@@ -24,6 +26,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
   const [error, setError] = useState("");
   const [inputValue, setInputValue] = useState("");
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
+  const artifactControl = useAgentArtifact(caseId, projection, contextDigest);
   const caseRef = useRef(caseId);
   const requestRef = useRef(0);
   const approvalRef = useRef<HTMLDivElement>(null);
@@ -68,7 +71,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     }
     return window.haksul.subscribeAgentRun({ caseId, runId, contextDigest }, (event) => {
       if (caseRef.current !== caseId || event.caseId !== caseId || event.runId !== runId) return;
-      setProjection(event.projection);
+      setProjection((current) => acceptAgentProjection(current, event.projection));
     });
   }, [caseId, contextDigest, runId]);
   const approvalId = projection?.pendingApproval?.approvalId;
@@ -83,7 +86,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     try {
       const result = await operation();
       if (requestId === requestRef.current && caseRef.current === requestCase) {
-        setProjection(result);
+        setProjection((current) => acceptAgentProjection(current, result));
       }
     } catch {
       if (requestId === requestRef.current && caseRef.current === requestCase) {
@@ -221,6 +224,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
   return (
     <AgentWorkspaceView
       approvalRef={approvalRef}
+      artifactControl={artifactControl}
       busy={busy}
       caseId={caseId}
       consent={consent}

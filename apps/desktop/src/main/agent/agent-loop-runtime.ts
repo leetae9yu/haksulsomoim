@@ -23,6 +23,7 @@ export interface AgentLoopRuntimeDependencies {
   readonly mutations: RuntimeCaseMutationQueue;
   readonly clock: AgentLoopClock;
   readonly identifiers: AgentLoopIdentifiers;
+  readonly publish?: (run: AgentRun) => void;
 }
 
 export type AgentLoopControl = {
@@ -34,6 +35,7 @@ export type AgentLoopControl = {
   snapshot: AgentRunSnapshot;
   provider?: AgentLoopProvider;
   cancellation?: Promise<AgentRun>;
+  pause?: Promise<AgentRun>;
   readonly cancellationRequested: Promise<void>;
   readonly requestCancellation: () => void;
   cancelled: boolean;
@@ -91,6 +93,7 @@ export async function commitControlRun(
   settled: boolean,
 ): Promise<void> {
   control.snapshot = await commitAgentRun(dependencies.runs, control.snapshot, run, settled);
+  dependencies.publish?.(run);
 }
 
 export async function loadAgentProjection(

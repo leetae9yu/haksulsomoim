@@ -22,6 +22,7 @@ const pausedRunStateSchema = z
       z.literal("approval-required"),
       z.literal("provider-unavailable"),
       z.literal("context-changed"),
+      z.literal("user-paused"),
     ]),
   })
   .readonly();

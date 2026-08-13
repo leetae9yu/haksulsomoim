@@ -12,6 +12,7 @@ import {
 const rendererProjectionSourceSchema = z.strictObject({
   run: agentRunSchema,
   citations: z.array(agentOfficialCitationProjectionSchema).max(24).readonly(),
+  revision: z.number().int().min(0).optional(),
 });
 
 function currentApproval(run: AgentRun) {
@@ -38,7 +39,25 @@ function terminalSummary(step: Extract<AgentStep, { kind: "terminal" }>) {
   return { kind: "failed-policy" as const, reason: step.outcome.reason };
 }
 
-function summarizeStep(step: AgentStep): AgentStepSummary {
+function toolDependency(run: AgentRun, step: Extract<AgentStep, { kind: "tool-finished" }>) {
+  const started = run.steps.find(
+    (candidate) =>
+      candidate.kind === "tool-started" && candidate.toolCall.toolCallId === step.result.toolCallId,
+  );
+  const digest =
+    started?.kind === "tool-started" && started.toolCall.toolName === "search-official-law"
+      ? started.toolCall.basisObservationDigest
+      : started?.kind === "tool-started" && started.toolCall.toolName === "write-local-draft"
+        ? started.toolCall.contentDigest
+        : undefined;
+  if (digest === undefined) return undefined;
+  return run.steps.find(
+    (candidate) =>
+      candidate.kind === "tool-finished" && candidate.result.observationDigest === digest,
+  )?.stepId;
+}
+
+function summarizeStep(step: AgentStep, run: AgentRun): AgentStepSummary {
   switch (step.kind) {
     case "decision-started":
       return { kind: step.kind, stepId: step.stepId };
@@ -46,13 +65,19 @@ function summarizeStep(step: AgentStep): AgentStepSummary {
       return { kind: step.kind, stepId: step.stepId, decisionKind: step.decision.kind };
     case "tool-started":
       return { kind: step.kind, stepId: step.stepId, toolName: step.toolCall.toolName };
-    case "tool-finished":
+    case "tool-finished": {
+      const dependsOnStepId = toolDependency(run, step);
+      const artifactId =
+        step.result.toolName === "write-local-draft" ? step.result.artifactId : undefined;
       return {
         kind: step.kind,
         stepId: step.stepId,
         toolName: step.result.toolName,
         outcome: step.result.outcome,
+        ...(dependsOnStepId === undefined ? {} : { dependsOnStepId }),
+        ...(artifactId === undefined ? {} : { artifactId }),
       };
+    }
     case "approval-requested":
       return { kind: step.kind, stepId: step.stepId, action: step.approval.action };
     case "approval-decided":
@@ -64,16 +89,21 @@ function summarizeStep(step: AgentStep): AgentStepSummary {
   }
 }
 
-function projectRun(run: AgentRun, citations: readonly unknown[] = []): AgentRunProjection {
+function projectRun(
+  run: AgentRun,
+  citations: readonly unknown[] = [],
+  revision = 0,
+): AgentRunProjection {
   return agentRunProjectionSchema.parse({
     caseId: run.caseId,
     runId: run.runId,
     goal: run.goal,
+    revision,
     budget: run.budget,
     state: run.state,
     lastStepId: run.steps.at(-1)?.stepId ?? null,
     pendingApproval: currentApproval(run),
-    steps: run.steps.map(summarizeStep),
+    steps: run.steps.map((step) => summarizeStep(step, run)),
     citations,
   });
 }
@@ -82,7 +112,9 @@ export function toAgentRunProjection(value: unknown): AgentRunProjection {
   const projection = agentRunProjectionSchema.safeParse(value);
   if (projection.success) return projection.data;
   const source = rendererProjectionSourceSchema.safeParse(value);
-  if (source.success) return projectRun(source.data.run, source.data.citations);
+  if (source.success) {
+    return projectRun(source.data.run, source.data.citations, source.data.revision);
+  }
   return projectRun(agentRunSchema.parse(value));
 }
 

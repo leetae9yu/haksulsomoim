@@ -54,6 +54,7 @@ const projection = {
     caseId: "case-1",
     objective: "prepare-civil-demand" as const,
   },
+  revision: 0,
   budget: { decisionsRemaining: 10, toolsRemaining: 7, durationMsRemaining: 200_000 },
   state: { kind: "paused" as const, reason: "approval-required" as const },
   lastStepId: "step-1",
@@ -72,6 +73,13 @@ const projection = {
 function agentServiceFixture() {
   const service = {
     openCase: mock(async () => ({ caseId: "case-1", contextDigest: digest })),
+    openArtifact: mock(async () => ({
+      artifactId: "artifact-1",
+      artifactKind: "civil-demand" as const,
+      title: "민사 초안",
+      sections: [{ heading: "요약", text: "마스킹된 초안" }],
+      citationIds: ["citation-1"],
+    })),
     start: mock(async () => projection),
     get: mock(async () => projection),
     list: mock(async () => [projection]),
@@ -98,6 +106,15 @@ describe("desktop IPC handlers", () => {
       contextDigest: digest,
     });
     expect(service.openCase).toHaveBeenCalledWith("case-1");
+    const artifactRequest = { ...binding, artifactId: "artifact-1" };
+    await expect(handlers.openAgentArtifact(artifactRequest)).resolves.toMatchObject({
+      artifactId: "artifact-1",
+      citationIds: ["citation-1"],
+    });
+    expect(service.openArtifact).toHaveBeenCalledWith(artifactRequest);
+    await expect(
+      handlers.openAgentArtifact({ ...artifactRequest, rawPath: "/tmp/forbidden" }),
+    ).rejects.toThrow();
     await handlers.startAgentRun({
       caseId: "case-1",
       goal: projection.goal,

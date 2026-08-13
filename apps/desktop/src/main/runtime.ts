@@ -14,6 +14,7 @@ import type { LocalOcrPort } from "../ocr/local-ocr";
 import { createLocalKorEngOcr } from "../ocr/tesseract-recognizer";
 import { Redactor } from "../security/redaction";
 import { LocalCaseStore } from "../storage/local-case-store";
+import { EncryptedAgentArtifactStore } from "./agent/agent-artifact-store";
 import { AgentLifecycleRuntime } from "./agent/agent-lifecycle-runtime";
 import { AgentRunRepository } from "./agent/agent-run-repository";
 import { ComposedAgentRuntime, type DesktopAgentRuntime } from "./agent/agent-runtime";
@@ -63,6 +64,10 @@ export async function createDesktopRuntime(
     directory: join(userDataPath, "case-vault", "agent-runs"),
     encryptionKey: masterKey,
   });
+  const agentArtifacts = new EncryptedAgentArtifactStore(
+    join(userDataPath, "case-vault", "agent-artifacts"),
+    masterKey,
+  );
   const law = (factories.createLaw ?? createKoreanLawMcpAdapter)();
   const redactor = new Redactor(masterKey);
   const mutations = new RuntimeCaseMutationQueue();
@@ -99,6 +104,7 @@ export async function createDesktopRuntime(
       cases: repository,
       redactor,
       external,
+      drafts: agentArtifacts,
       mutations,
     }),
     external,
@@ -108,6 +114,7 @@ export async function createDesktopRuntime(
     agent,
     agentRuns,
     async (caseId) => (await repository.read(caseId)).retrievedCitations,
+    agentArtifacts,
   );
   let disposal: Promise<void> | undefined;
 

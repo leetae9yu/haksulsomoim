@@ -21,6 +21,11 @@ import {
   trustedAuthenticationRequestSchema,
 } from "../contracts/desktop-api";
 import {
+  type AgentArtifactView,
+  agentArtifactOpenRequestSchema,
+  agentArtifactViewSchema,
+} from "./agent/agent-artifact-ipc-contracts";
+import {
   type AgentApprovalDecisionIpcRequest,
   type AgentCaseContext,
   type AgentRunBinding,
@@ -47,6 +52,7 @@ import type { CaseRuntimeService } from "./runtime-case-service";
 
 export interface AgentLifecycleHandlers {
   openAgentCase(request: unknown): Promise<AgentCaseContext>;
+  openAgentArtifact(request: unknown): Promise<AgentArtifactView>;
   startAgentRun(request: unknown): Promise<AgentRunProjection>;
   getAgentRun(request: unknown): Promise<AgentRunProjection>;
   listAgentRuns(request: unknown): Promise<readonly AgentRunProjection[]>;
@@ -59,6 +65,7 @@ export interface AgentLifecycleHandlers {
 
 export interface AgentLifecycleService {
   openCase(caseId: string): Promise<unknown>;
+  openArtifact(request: unknown): Promise<unknown>;
   start(
     request: Readonly<{ caseId: string; goal: unknown; approvedContextDigest: string }>,
   ): Promise<unknown>;
@@ -117,6 +124,10 @@ export function createAgentLifecycleHandlers(
       const context = agentCaseContextSchema.parse(await service.openCase(parsed.caseId));
       if (context.caseId !== parsed.caseId) throw new Error("Agent service returned another case");
       return context;
+    },
+    async openAgentArtifact(request) {
+      const parsed = agentArtifactOpenRequestSchema.parse(request);
+      return agentArtifactViewSchema.parse(await service.openArtifact(parsed));
     },
     async startAgentRun(request) {
       const parsed: AgentRunStartIpcRequest = agentRunStartIpcRequestSchema.parse(request);

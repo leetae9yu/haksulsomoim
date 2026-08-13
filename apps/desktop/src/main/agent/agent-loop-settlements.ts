@@ -1,6 +1,7 @@
 import type { AgentRun, AgentToolResult } from "./agent-contracts";
 import {
   cancelAgentRun,
+  pauseAgentRunForUser,
   pauseFailedProviderTurn,
   pauseIdleAgentRun,
 } from "./agent-loop-boundary-reducer";
@@ -61,6 +62,23 @@ export async function pauseAgentProviderTurn(
     const current = control.snapshot.run;
     if (current.state.kind !== "active") return current;
     const run = pauseFailedProviderTurn(
+      current,
+      dependencies.identifiers.nextStepId(),
+      remainingDuration(dependencies, control, current),
+    );
+    await commitControlRun(dependencies, control, run, true);
+    return run;
+  });
+}
+
+export async function pauseActiveAgentRun(
+  dependencies: AgentLoopRuntimeDependencies,
+  control: AgentLoopControl,
+): Promise<AgentRun> {
+  return dependencies.mutations.run(control.caseId, async () => {
+    const current = control.snapshot.run;
+    if (current.state.kind !== "active") return current;
+    const run = pauseAgentRunForUser(
       current,
       dependencies.identifiers.nextStepId(),
       remainingDuration(dependencies, control, current),
