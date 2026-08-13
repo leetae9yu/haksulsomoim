@@ -1,10 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import {
-  createAgentLifecycleHandlers,
-  createDesktopHandlers,
-  createOpenOfficialSourceHandler,
-  createOpenTrustedAuthenticationHandler,
-} from "./ipc-handlers";
+import { createAgentLifecycleHandlers, createDesktopHandlers } from "./ipc-handlers";
 import type { CaseRuntimeService } from "./runtime-case-service";
 
 function serviceFixture() {
@@ -41,7 +36,13 @@ function serviceFixture() {
     })),
     suggest: mock(async () => ({ text: "suggestion", citationIds: [] })),
   };
-  return { handlers: createDesktopHandlers(service as unknown as CaseRuntimeService), service };
+  return {
+    handlers: createDesktopHandlers(
+      service as unknown as CaseRuntimeService,
+      agentServiceFixture().service,
+    ),
+    service,
+  };
 }
 
 const digest = "a".repeat(64);
@@ -70,6 +71,7 @@ const projection = {
 
 function agentServiceFixture() {
   const service = {
+    openCase: mock(async () => ({ caseId: "case-1", contextDigest: digest })),
     start: mock(async () => projection),
     get: mock(async () => projection),
     list: mock(async () => [projection]),
@@ -91,6 +93,11 @@ describe("desktop IPC handlers", () => {
   test("routes the complete agent lifecycle through typed case-bound requests", async () => {
     const { handlers, service } = agentServiceFixture();
     const binding = { caseId: "case-1", runId: "run-1", contextDigest: digest };
+    expect(await handlers.openAgentCase({ caseId: "case-1" })).toEqual({
+      caseId: "case-1",
+      contextDigest: digest,
+    });
+    expect(service.openCase).toHaveBeenCalledWith("case-1");
     await handlers.startAgentRun({
       caseId: "case-1",
       goal: projection.goal,
@@ -203,34 +210,6 @@ describe("desktop IPC handlers", () => {
     ).rejects.toThrow();
     expect(service.suggest).not.toHaveBeenCalled();
     await expect(handlers.codexStatus({ unexpected: true })).rejects.toThrow();
-  });
-
-  test("opens only validated official sources through the main process", async () => {
-    const openExternal = mock(async (_url: string) => undefined);
-    const openOfficialSource = createOpenOfficialSourceHandler(openExternal);
-
-    await openOfficialSource({ url: "https://law.go.kr/법령/민법" });
-    await openOfficialSource({ url: "https://www.law.go.kr/법령/민법" });
-    expect(openExternal).toHaveBeenNthCalledWith(1, "https://law.go.kr/법령/민법");
-    expect(openExternal).toHaveBeenNthCalledWith(2, "https://www.law.go.kr/법령/민법");
-
-    await expect(openOfficialSource({ url: "https://law.go.kr.evil.example/" })).rejects.toThrow();
-    expect(openExternal).toHaveBeenCalledTimes(2);
-  });
-
-  test("opens authentication separately and only on the exact trusted origin", async () => {
-    const openExternal = mock(async (_url: string) => undefined);
-    const openAuthentication = createOpenTrustedAuthenticationHandler(openExternal);
-
-    await openAuthentication({ url: "https://auth.openai.com/oauth/authorize?state=opaque" });
-    expect(openExternal).toHaveBeenCalledWith(
-      "https://auth.openai.com/oauth/authorize?state=opaque",
-    );
-
-    await expect(
-      openAuthentication({ url: "https://auth.openai.com.evil.example/oauth/authorize" }),
-    ).rejects.toThrow();
-    expect(openExternal).toHaveBeenCalledTimes(1);
   });
 
   test("routes typed workflow and provider requests", async () => {

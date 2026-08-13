@@ -15,18 +15,11 @@ import { messages } from "./renderer-state";
 interface TrackBoardProps {
   readonly caseId: string;
   readonly confirmedText: string;
-  readonly contextDigest: string;
   readonly workflow: WorkflowSnapshot;
   readonly onWorkflowChange: (snapshot: WorkflowSnapshot) => void;
 }
 
-export function TrackBoard({
-  caseId,
-  confirmedText,
-  contextDigest,
-  workflow,
-  onWorkflowChange,
-}: TrackBoardProps) {
+export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }: TrackBoardProps) {
   const [criminalBusy, setCriminalBusy] = useState(false);
   const [civilBusy, setCivilBusy] = useState(false);
   const [criminalError, setCriminalError] = useState("");
@@ -102,11 +95,7 @@ export function TrackBoard({
       </section>
       <section className="integration-board reveal" aria-label="공식 근거와 사건 Agent">
         <GuidancePanel caseId={caseId} onCitations={updateCitations} />
-        <AgentWorkspace
-          caseId={caseId}
-          contextDigest={contextDigest}
-          officialCitationCount={citations.length}
-        />
+        <AgentWorkspace caseId={caseId} officialCitationCount={citations.length} />
       </section>
       <HandoffCards />
     </>

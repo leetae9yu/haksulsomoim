@@ -2,7 +2,11 @@ import type { AgentRun } from "./agent-contracts";
 import { AgentLoopRunner } from "./agent-loop-runner";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
 import { AgentLoopService } from "./agent-loop-service";
-import type { AgentLoopStartInput } from "./agent-loop-types";
+import type {
+  AgentLoopApprovalInput,
+  AgentLoopApprovalResolution,
+  AgentLoopStartInput,
+} from "./agent-loop-types";
 import { AgentRunInvariantError, type AgentRunRepository } from "./agent-run-repository";
 import type { AgentRuntimeExternalDependencies } from "./agent-runtime-composition";
 
@@ -26,6 +30,7 @@ export interface DesktopAgentRuntime {
   >;
   start(input: AgentLoopStartInput): Promise<AgentRuntimeResult>;
   resume(input: AgentResumeInput): Promise<AgentRuntimeResult>;
+  decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution>;
   cancel(input: Readonly<{ caseId: string; runId: string }>): Promise<AgentRun>;
   dispose(): Promise<void>;
 }
@@ -112,6 +117,11 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
       await this.#releaseResumed(runner, run);
       return { status: "completed", run };
     });
+  }
+
+  decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution> {
+    this.#assertOpen();
+    return this.#service.decideApproval(input);
   }
 
   async cancel(input: Readonly<{ caseId: string; runId: string }>): Promise<AgentRun> {

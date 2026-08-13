@@ -29,10 +29,11 @@ async function selectGoalAndConsent(
 ) {
   await user.click(screen.getByLabelText(goal));
   await user.click(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/));
+  await waitFor(() => expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", false));
 }
 
 function workspace(caseId = "case-1") {
-  return <AgentWorkspace caseId={caseId} contextDigest={contextDigest} officialCitationCount={1} />;
+  return <AgentWorkspace caseId={caseId} officialCitationCount={1} />;
 }
 
 describe("Korean Agent workspace", () => {
@@ -72,6 +73,31 @@ describe("Korean Agent workspace", () => {
     expect(screen.getByTestId("agent-announcement").textContent).toContain("완료");
   });
 
+  test("requires re-consent when the masked context changes immediately before start", async () => {
+    let opens = 0;
+    const changedDigest = "c".repeat(64);
+    const controls = installWorkspaceApi({
+      openAgentCase: mock(async () => ({
+        caseId: "case-1",
+        contextDigest: opens++ === 0 ? contextDigest : changedDigest,
+      })),
+    });
+    const user = userEvent.setup();
+    render(workspace());
+    await ready();
+    await selectGoalAndConsent(user);
+    await user.click(screen.getByTestId("agent-start"));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/)).toHaveProperty(
+        "checked",
+        false,
+      ),
+    );
+    expect(controls.startAgentRun).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("새 지문을 다시 승인");
+  });
+
   test("keeps criminal goals separate and supports native keyboard operation", async () => {
     const startAgentRun = mock(async (request: AgentRunStartIpcRequest) =>
       completedProjection(request.caseId, request.goal),
@@ -87,6 +113,9 @@ describe("Korean Agent workspace", () => {
     const consent = screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/);
     consent.focus();
     await user.keyboard("[Space]");
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", false),
+    );
     const start = screen.getByTestId("agent-start");
     start.focus();
     await user.keyboard("[Enter]");
@@ -124,14 +153,7 @@ describe("Korean Agent workspace", () => {
     expect(document.activeElement).toBe(approval);
     await user.click(screen.getByRole("button", { name: "거부" }));
 
-    rerender(
-      <AgentWorkspace
-        key="approve"
-        caseId="case-1"
-        contextDigest={contextDigest}
-        officialCitationCount={1}
-      />,
-    );
+    rerender(<AgentWorkspace key="approve" caseId="case-1" officialCitationCount={1} />);
     await ready();
     await selectGoalAndConsent(user);
     await user.click(screen.getByTestId("agent-start"));

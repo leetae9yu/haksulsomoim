@@ -22,6 +22,7 @@ import {
 } from "../contracts/desktop-api";
 import {
   type AgentApprovalDecisionIpcRequest,
+  type AgentCaseContext,
   type AgentRunBinding,
   type AgentRunEvent,
   type AgentRunListRequest,
@@ -29,6 +30,8 @@ import {
   type AgentRunResumeRequest,
   type AgentRunStartIpcRequest,
   agentApprovalDecisionIpcRequestSchema,
+  agentCaseContextSchema,
+  agentCaseOpenRequestSchema,
   agentRunCancelRequestSchema,
   agentRunGetRequestSchema,
   agentRunListRequestSchema,
@@ -43,6 +46,7 @@ import { toAgentRunEvent, toAgentRunProjection } from "./agent/agent-ipc-mapper"
 import type { CaseRuntimeService } from "./runtime-case-service";
 
 export interface AgentLifecycleHandlers {
+  openAgentCase(request: unknown): Promise<AgentCaseContext>;
   startAgentRun(request: unknown): Promise<AgentRunProjection>;
   getAgentRun(request: unknown): Promise<AgentRunProjection>;
   listAgentRuns(request: unknown): Promise<readonly AgentRunProjection[]>;
@@ -54,6 +58,7 @@ export interface AgentLifecycleHandlers {
 }
 
 export interface AgentLifecycleService {
+  openCase(caseId: string): Promise<unknown>;
   start(
     request: Readonly<{ caseId: string; goal: unknown; approvedContextDigest: string }>,
   ): Promise<unknown>;
@@ -68,7 +73,7 @@ export interface AgentLifecycleService {
   subscribe(request: AgentRunBinding, listener: (event: unknown) => void): () => void;
 }
 
-export interface DesktopHandlers extends Partial<AgentLifecycleHandlers> {
+export interface DesktopHandlers extends AgentLifecycleHandlers {
   createCase(request: unknown): Promise<CaseCreateResponse>;
   analyzeEvidence(request: unknown): Promise<EvidenceAnalyzeResponse>;
   confirmOcrFacts(request: unknown): Promise<TransitionResponse>;
@@ -107,6 +112,12 @@ export function createAgentLifecycleHandlers(
     return boundProjection(await command(parsed), parsed);
   };
   return {
+    async openAgentCase(request) {
+      const parsed = agentCaseOpenRequestSchema.parse(request);
+      const context = agentCaseContextSchema.parse(await service.openCase(parsed.caseId));
+      if (context.caseId !== parsed.caseId) throw new Error("Agent service returned another case");
+      return context;
+    },
     async startAgentRun(request) {
       const parsed: AgentRunStartIpcRequest = agentRunStartIpcRequestSchema.parse(request);
       const run = await service.start({
@@ -165,8 +176,12 @@ export function createOpenTrustedAuthenticationHandler(
   };
 }
 
-export function createDesktopHandlers(service: CaseRuntimeService): DesktopHandlers {
+export function createDesktopHandlers(
+  service: CaseRuntimeService,
+  agent: AgentLifecycleService,
+): DesktopHandlers {
   return {
+    ...createAgentLifecycleHandlers(agent),
     async createCase(request) {
       const parsed = caseCreateRequestSchema.parse(request);
       return service.createCase({ amountKrw: parsed.amountKrw });

@@ -25,6 +25,8 @@ export type {
 } from "../main/agent/agent-ipc-contracts";
 export {
   agentApprovalDecisionIpcRequestSchema,
+  agentCaseContextSchema,
+  agentCaseOpenRequestSchema,
   agentRunCancelRequestSchema,
   agentRunEventSchema,
   agentRunGetRequestSchema,
@@ -39,6 +41,8 @@ export {
 
 import type {
   AgentApprovalDecisionIpcRequest,
+  AgentCaseContext,
+  AgentCaseOpenRequest,
   AgentRunBinding,
   AgentRunEvent,
   AgentRunListRequest,
@@ -231,6 +235,7 @@ export interface DesktopApi {
   codexStatus?(request: EmptyRequest): Promise<CodexStatusResponse>;
   codexLogin?(request: EmptyRequest): Promise<CodexLoginResponse>;
   codexSuggestion?(request: CodexSuggestionRequest): Promise<CodexSuggestionResponse>;
+  openAgentCase?(request: AgentCaseOpenRequest): Promise<AgentCaseContext>;
   startAgentRun?(request: AgentRunStartIpcRequest): Promise<AgentRunProjection>;
   getAgentRun?(request: AgentRunBinding): Promise<AgentRunProjection>;
   listAgentRuns?(request: AgentRunListRequest): Promise<readonly AgentRunProjection[]>;

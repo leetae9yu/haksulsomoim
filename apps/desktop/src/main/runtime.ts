@@ -14,10 +14,15 @@ import type { LocalOcrPort } from "../ocr/local-ocr";
 import { createLocalKorEngOcr } from "../ocr/tesseract-recognizer";
 import { Redactor } from "../security/redaction";
 import { LocalCaseStore } from "../storage/local-case-store";
+import { AgentLifecycleRuntime } from "./agent/agent-lifecycle-runtime";
 import { AgentRunRepository } from "./agent/agent-run-repository";
 import { ComposedAgentRuntime, type DesktopAgentRuntime } from "./agent/agent-runtime";
 import { createAgentLoopDependencies } from "./agent/agent-runtime-composition";
-import { createDesktopHandlers, type DesktopHandlers } from "./ipc-handlers";
+import {
+  type AgentLifecycleService,
+  createDesktopHandlers,
+  type DesktopHandlers,
+} from "./ipc-handlers";
 import { RuntimeCaseMutationQueue } from "./runtime-case-mutation-queue";
 import { EncryptedRuntimeCaseRepository } from "./runtime-case-repository";
 import { CaseRuntimeService } from "./runtime-case-service";
@@ -25,6 +30,7 @@ import { CaseRuntimeService } from "./runtime-case-service";
 export interface DesktopRuntime {
   readonly handlers: DesktopHandlers;
   readonly agent: DesktopAgentRuntime;
+  readonly agentLifecycle: AgentLifecycleService;
   dispose(): Promise<void>;
 }
 
@@ -98,11 +104,17 @@ export async function createDesktopRuntime(
     external,
     agentRuns,
   );
+  const agentLifecycle = new AgentLifecycleRuntime(
+    agent,
+    agentRuns,
+    async (caseId) => (await repository.read(caseId)).retrievedCitations,
+  );
   let disposal: Promise<void> | undefined;
 
   return {
-    handlers: createDesktopHandlers(service),
+    handlers: createDesktopHandlers(service, agentLifecycle),
     agent,
+    agentLifecycle,
     dispose() {
       disposal ??= (async () => {
         const agentResult = await Promise.allSettled([agent.dispose()]);

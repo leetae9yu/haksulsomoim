@@ -5,6 +5,29 @@ import { createDesktopPreloadApi } from "./index";
 const digest = "a".repeat(64);
 
 describe("desktop preload bridge", () => {
+  test("opens only the strict masked-case digest projection", async () => {
+    const invoke = mock(async () => ({ caseId: "case-1", contextDigest: digest }));
+    const ipc = {
+      invoke,
+      send: mock(() => undefined),
+      on: mock(() => undefined),
+      removeListener: mock(() => undefined),
+    };
+    const api = createDesktopPreloadApi(ipc);
+
+    await expect(api.openAgentCase({ caseId: "case-1" })).resolves.toEqual({
+      caseId: "case-1",
+      contextDigest: digest,
+    });
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.agentCaseOpen, { caseId: "case-1" });
+    invoke.mockImplementation(async () => ({
+      caseId: "case-1",
+      contextDigest: digest,
+      rawEvidence: "forbidden",
+    }));
+    await expect(api.openAgentCase({ caseId: "case-1" })).rejects.toThrow();
+  });
+
   test("exposes narrow lifecycle invokes without exposing raw ipcRenderer", async () => {
     const invoke = mock(async (_channel: string, _request: unknown) => ({
       caseId: "case-1",

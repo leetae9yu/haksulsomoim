@@ -21,6 +21,11 @@ const runBinding = {
   contextDigest: contextDigestSchema,
 };
 
+export const agentCaseOpenRequestSchema = z.strictObject({ caseId: caseIdSchema });
+export const agentCaseContextSchema = z.strictObject({
+  caseId: caseIdSchema,
+  contextDigest: contextDigestSchema,
+});
 export const agentRunStartIpcRequestSchema = z
   .strictObject({
     caseId: caseIdSchema,
@@ -229,6 +234,8 @@ export const agentRunEventSchema = z.strictObject({
   projection: agentRunProjectionSchema,
 });
 
+export type AgentCaseOpenRequest = z.input<typeof agentCaseOpenRequestSchema>;
+export type AgentCaseContext = z.input<typeof agentCaseContextSchema>;
 export type AgentRunStartIpcRequest = z.input<typeof agentRunStartIpcRequestSchema>;
 export type AgentRunBinding = z.input<typeof agentRunGetRequestSchema>;
 export type AgentRunListRequest = z.input<typeof agentRunListRequestSchema>;

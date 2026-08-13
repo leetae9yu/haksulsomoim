@@ -94,6 +94,85 @@ describe("desktop runtime", () => {
     await runtime.dispose();
   });
 
+  test("routes a real Agent run through the production handler surface", async () => {
+    const root = await mkdtemp(join(tmpdir(), "haksul-runtime-agent-ipc-"));
+    roots.push(root);
+    let turn = 0;
+    const provider = {
+      state: {
+        status: "authenticated" as const,
+        account: { type: "chatgpt" as const, email: null, planType: "test" },
+      },
+      async nextDecision() {
+        turn += 1;
+        if (turn === 1) {
+          return {
+            kind: "tool",
+            decisionId: "provider-inspect",
+            toolCall: { toolName: "inspect-masked-case", toolCallId: "provider-tool-inspect" },
+          };
+        }
+        if (turn === 2) {
+          return {
+            kind: "tool",
+            decisionId: "provider-law",
+            toolCall: {
+              toolName: "search-official-law",
+              toolCallId: "provider-tool-law",
+              query: "지급명령",
+            },
+          };
+        }
+        return {
+          kind: "finish",
+          decisionId: "provider-finish",
+          outcome: { kind: "completed", summaryDigest: "c".repeat(64) },
+        };
+      },
+      interrupt: async () => undefined,
+      startChatGptLogin: async () => {
+        throw new Error("unused");
+      },
+      suggest: async () => {
+        throw new Error("unused");
+      },
+      dispose: async () => undefined,
+    } as unknown as CodexAgentProvider;
+    const runtime = await createDesktopRuntime(root, {
+      loadKey: async () => new Uint8Array(32).fill(13),
+      createLaw: () =>
+        ({
+          tools: () => ["search_law"],
+          discover: async () => ["search_law"],
+          execute: async () => ({ ok: true, value: { content: {}, citations: [] } }),
+          close: async () => undefined,
+        }) as KoreanLawMcpAdapter,
+      createProvider: async () => provider,
+    });
+    const created = await runtime.handlers.createCase({
+      amountKrw: 538_000,
+      jurisdiction: "domestic",
+      paymentMethod: "bank-transfer",
+    });
+    if (created.status !== "accepted") throw new Error("fixture failed");
+    const opened = await runtime.handlers.openAgentCase({ caseId: created.caseId });
+    const projection = await runtime.handlers.startAgentRun({
+      caseId: created.caseId,
+      contextDigest: opened.contextDigest,
+      goal: {
+        kind: "civil-recovery",
+        caseId: created.caseId,
+        objective: "prepare-civil-demand",
+      },
+    });
+
+    expect(projection.state).toMatchObject({ kind: "terminal", outcome: { kind: "completed" } });
+    expect(
+      projection.steps.flatMap((step) => (step.kind === "tool-finished" ? [step.toolName] : [])),
+    ).toEqual(["inspect-masked-case", "search-official-law"]);
+    await runtime.dispose();
+  });
+
   test("awaits every initialized integration cleanup and reports aggregate failure", async () => {
     const root = await mkdtemp(join(tmpdir(), "haksul-runtime-"));
     roots.push(root);

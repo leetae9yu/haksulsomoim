@@ -56,10 +56,7 @@ export function registerDesktopIpcWith(
   const openTrustedAuthentication = createOpenTrustedAuthenticationHandler(async (url) => {
     await dependencies.openExternal(url);
   });
-  const registrations: readonly (readonly [
-    string,
-    ((request: unknown) => Promise<unknown>) | undefined,
-  ])[] = [
+  const registrations: readonly (readonly [string, (request: unknown) => Promise<unknown>])[] = [
     [IPC_CHANNELS.createCase, handlers.createCase],
     [IPC_CHANNELS.analyzeEvidence, handlers.analyzeEvidence],
     [IPC_CHANNELS.confirmOcrFacts, handlers.confirmOcrFacts],
@@ -72,6 +69,7 @@ export function registerDesktopIpcWith(
     [IPC_CHANNELS.codexStatus, handlers.codexStatus],
     [IPC_CHANNELS.codexLogin, handlers.codexLogin],
     [IPC_CHANNELS.codexSuggestion, handlers.codexSuggestion],
+    [IPC_CHANNELS.agentCaseOpen, handlers.openAgentCase],
     [IPC_CHANNELS.agentRunStart, handlers.startAgentRun],
     [IPC_CHANNELS.agentRunGet, handlers.getAgentRun],
     [IPC_CHANNELS.agentRunList, handlers.listAgentRuns],
@@ -83,7 +81,6 @@ export function registerDesktopIpcWith(
   const registered: string[] = [];
   try {
     for (const [channel, handler] of registrations) {
-      if (handler === undefined) continue;
       dependencies.ipcMain.handle(channel, async (event, request) => {
         assertTrustedSender(event);
         return await handler(request);
@@ -108,9 +105,6 @@ export function registerDesktopIpcWith(
     const key = `${control.caseId}\0${control.runId}`;
     clear(event.sender, key);
     if (control.action === "unsubscribe") return;
-    if (handlers.subscribeAgentRun === undefined) {
-      throw new Error("Agent lifecycle is unavailable");
-    }
     let active = true;
     const binding = {
       caseId: control.caseId,

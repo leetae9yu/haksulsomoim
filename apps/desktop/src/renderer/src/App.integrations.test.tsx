@@ -48,11 +48,17 @@ describe("official guidance and autonomous Agent workspace", () => {
     });
   });
 
-  test("replaces the optional suggestion with digest-bound Agent start", async () => {
+  test("replaces the optional suggestion with the current masked-case digest", async () => {
+    const maskedContextDigest = "c".repeat(64);
+    const openAgentCase = mock(async () => ({
+      caseId: "case-1",
+      contextDigest: maskedContextDigest,
+    }));
     const startAgentRun = mock(async (request: AgentRunStartIpcRequest) =>
       completedProjection(request.caseId, request.goal),
     );
     installApi({
+      openAgentCase,
       codexStatus: mock(
         async (_request: EmptyRequest): Promise<CodexStatusResponse> => ({
           status: "authenticated",
@@ -72,11 +78,15 @@ describe("official guidance and autonomous Agent workspace", () => {
     expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", true);
     await user.click(screen.getByLabelText("민사 회수"));
     await user.click(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", false),
+    );
     await user.click(screen.getByTestId("agent-start"));
 
+    expect(openAgentCase).toHaveBeenCalledWith({ caseId: "case-1" });
     expect(startAgentRun).toHaveBeenCalledWith({
       caseId: "case-1",
-      contextDigest: "a".repeat(64),
+      contextDigest: maskedContextDigest,
       goal: {
         kind: "civil-recovery",
         caseId: "case-1",

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   agentApprovalDecisionIpcRequestSchema,
   agentApprovalDecisionRequestSchema,
+  agentCaseContextSchema,
+  agentCaseOpenRequestSchema,
   agentRunListResponseSchema,
   agentRunResumeRequestSchema,
   agentRunStartIpcRequestSchema,
@@ -90,6 +92,22 @@ describe("desktop IPC contracts", () => {
           approvalDigest: "b".repeat(64),
           outcome: "approved",
         },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("returns only a strict case-bound masked context digest", () => {
+    const context = { caseId: "case-1", contextDigest: "a".repeat(64) };
+    expect(agentCaseOpenRequestSchema.safeParse({ caseId: "case-1" }).success).toBe(true);
+    expect(agentCaseOpenRequestSchema.safeParse({ ...context, evidenceId: "raw" }).success).toBe(
+      false,
+    );
+    expect(agentCaseContextSchema.safeParse(context).success).toBe(true);
+    expect(
+      agentCaseContextSchema.safeParse({
+        ...context,
+        maskedFacts: [{ id: "raw", text: "must not cross IPC" }],
+        providerId: "forged",
       }).success,
     ).toBe(false);
   });

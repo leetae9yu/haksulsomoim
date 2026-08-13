@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
-const require = createRequire(import.meta.url);
+const nativeRequire = createRequire(import.meta.url);
 
 type NativeOpenedFile = Readonly<{ fd: number }>;
 
@@ -22,8 +22,8 @@ function isNativeBinding(value: unknown): value is AgentRepositoryKeyNativeBindi
 
 export function agentRepositoryKeyNativeBinding(): AgentRepositoryKeyNativeBinding {
   if (loadedBinding !== undefined) return loadedBinding;
-  const packageRoot = dirname(require.resolve("@openclaw/fs-safe/package.json"));
-  const loader: unknown = require(join(packageRoot, "dist/native.js"));
+  const packageRoot = dirname(nativeRequire.resolve("@openclaw/fs-safe/package.json"));
+  const loader: unknown = nativeRequire(join(packageRoot, "dist/native.js"));
   if (
     typeof loader !== "object" ||
     loader === null ||

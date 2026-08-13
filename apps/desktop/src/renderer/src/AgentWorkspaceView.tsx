@@ -16,7 +16,7 @@ interface AgentWorkspaceViewProps {
   readonly busy: boolean;
   readonly caseId: string;
   readonly consent: boolean;
-  readonly contextDigest: string;
+  readonly contextDigest: string | undefined;
   readonly error: string;
   readonly goal: GoalChoice;
   readonly inputValue: string;
@@ -37,11 +37,11 @@ interface AgentWorkspaceViewProps {
   readonly onResume: () => void;
   readonly onStart: () => void;
 }
-
 export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
   const canStart =
     props.goal !== undefined &&
     props.consent &&
+    props.contextDigest !== undefined &&
     props.provider.status === "authenticated" &&
     !props.busy &&
     (props.projection === undefined || props.projection.state.kind === "terminal");
@@ -49,7 +49,6 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
   const resumable =
     props.projection?.state.kind === "paused" || props.projection?.state.kind === "interrupted";
   const pendingApproval = props.projection?.pendingApproval;
-
   return (
     <section
       className="agent-workspace"
@@ -70,7 +69,6 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
           LOCAL
         </div>
       </header>
-
       <div className="agent-provider-bar">
         <AgentProviderStatus
           busy={props.providerBusy}
@@ -80,7 +78,6 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
           state={props.provider}
         />
       </div>
-
       <div className="agent-status-banner" data-state={props.status}>
         <span className="agent-status-mark" aria-hidden="true" />
         <strong>{statusMessage(props.status)}</strong>
@@ -128,8 +125,12 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
         <div>
           <span className="panel-kicker">2. OUTBOUND CONSENT</span>
           <strong>현재 사건 컨텍스트 지문</strong>
-          <code title={props.contextDigest}>{props.contextDigest.slice(0, 16)}…</code>
-          <small>확인된 증거 지문 · 공식 근거 {props.officialCitationCount}건</small>
+          {props.contextDigest === undefined ? (
+            <code>동의할 때 안전하게 확인</code>
+          ) : (
+            <code title={props.contextDigest}>{props.contextDigest.slice(0, 16)}…</code>
+          )}
+          <small>마스킹된 사건 지문 · 공식 근거 {props.officialCitationCount}건</small>
         </div>
         <label className="checkbox-row">
           <input

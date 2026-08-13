@@ -129,6 +129,10 @@ export function installWorkspaceApi(overrides: Partial<DesktopApi> = {}) {
       status: "authenticated" as const,
       account: { type: "chatgpt" as const, email: null, planType: "plus" },
     })),
+    openAgentCase: mock(async (request) => ({
+      caseId: request.caseId,
+      contextDigest,
+    })),
     listAgentRuns: mock(async () => []),
     startAgentRun,
     pauseAgentRun,

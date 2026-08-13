@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { app } from "electron";
-import { UnavailableCodexAgentProvider } from "../integrations/agent-provider/unavailable-provider";
 import type { KoreanLawMcpAdapter } from "../integrations/korean-law-mcp/korean-law-mcp";
 import type { LocalOcrPort } from "../ocr/local-ocr";
 import { bootstrapDesktop, reportBootstrapFailure } from "./bootstrap";
+import { createQaAgentProvider, type QaAgentScenario } from "./qa-agent-provider";
 import { createDesktopRuntime } from "./runtime";
 
 const QA_ONLY_DETERMINISTIC_MARKER = "HAKSUL_QA_ONLY_DETERMINISTIC_KEY_V1";
@@ -15,6 +15,19 @@ function requiredArgument(name: string): string {
   const value = process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
   if (value === undefined || value.length === 0) throw new TypeError(`Missing ${name}`);
   return value;
+}
+
+function qaScenario(): QaAgentScenario {
+  const scenario = requiredArgument("--qa-scenario");
+  if (
+    scenario !== "happy" &&
+    scenario !== "malformed" &&
+    scenario !== "agent-happy" &&
+    scenario !== "agent-approval"
+  ) {
+    throw new TypeError("Unsupported QA scenario");
+  }
+  return scenario;
 }
 
 function createQaOcr(): Promise<LocalOcrPort> {
@@ -75,6 +88,7 @@ function createQaLaw(): KoreanLawMcpAdapter {
 }
 
 const qaUserDataRoot = resolve(requiredArgument("--qa-user-data-root"));
+const scenario = qaScenario();
 app.setPath("userData", qaUserDataRoot);
 
 void bootstrapDesktop((userDataPath) =>
@@ -82,6 +96,6 @@ void bootstrapDesktop((userDataPath) =>
     loadKey: async () => createHash("sha256").update(QA_ONLY_DETERMINISTIC_MARKER).digest(),
     createLaw: createQaLaw,
     createOcr: createQaOcr,
-    createProvider: async () => new UnavailableCodexAgentProvider("QA manual mode"),
+    createProvider: async () => createQaAgentProvider(scenario),
   }),
 ).catch(reportBootstrapFailure);

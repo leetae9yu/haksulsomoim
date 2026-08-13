@@ -17,7 +17,7 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "build": "electron-vite build",
-    "qa:desktop": "node scripts/qa-desktop.ts",
+    "qa:desktop": "xvfb-run -a node scripts/qa-desktop.ts",
     "qa:privacy": "bun run scripts/qa-privacy.ts",
     "qa:korean-law-mcp": "bun run scripts/qa-korean-law-mcp.ts",
     "qa:agent-provider": "bun run scripts/qa-agent-provider.ts",

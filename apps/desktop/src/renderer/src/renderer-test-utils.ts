@@ -114,6 +114,10 @@ export function installApi(overrides: Partial<DesktopApi> = {}) {
       text: "확인된 사실을 기준으로 정리했습니다.",
       citationIds: [],
     })),
+    openAgentCase: mock(async (request) => ({
+      caseId: request.caseId,
+      contextDigest: "a".repeat(64),
+    })),
     listAgentRuns: mock(async () => []),
     subscribeAgentRun: mock(() => () => undefined),
     ...overrides,
