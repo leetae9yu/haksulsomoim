@@ -32,7 +32,7 @@ describe("F4 dependency-specific package closure", () => {
     const root = mkdtempSync(join(tmpdir(), "haksul-f4-prune-"));
     try {
       const modules = join(root, "node_modules");
-      for (const name of ["@openai/codex-sdk", "@kordoc/core", "openai", "debug", "tesseract.js"]) {
+      for (const name of ["@openai/codex-sdk", "@kordoc/core", "openai", "debug", "tesseract.js", "dotenv"]) {
         fixtureManifest(modules, name, {
           main:
             name === "debug"
@@ -52,6 +52,19 @@ describe("F4 dependency-specific package closure", () => {
       ])
         write(modules, path);
       write(modules, "debug/src/index.js", "export const debugRuntime = true;");
+      fixtureManifest(modules, "dotenv", { main: "lib/main.js", types: "lib/main.d.ts" });
+      for (const path of [
+        "README.md",
+        "README-es.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "SECURITY.md",
+        "config.js",
+        "lib/main.js",
+        "lib/main.d.ts",
+        "tests/example.test.js",
+        "examples/basic.js",
+      ]) write(modules, `dotenv/${path}`);
       write(modules, "tesseract.js/src/index.js", "export const ocrRuntime = true;");
       fixtureManifest(modules, "unlisted-runtime");
       write(modules, "unlisted-runtime/runtime.js.map", "runtime-owned metadata");
@@ -61,6 +74,18 @@ describe("F4 dependency-specific package closure", () => {
       expect(existsSync(join(modules, "debug/runtime/index.js"))).toBe(true);
       expect(existsSync(join(modules, "tesseract.js/runtime/index.js"))).toBe(true);
       expect(existsSync(join(modules, "@openai/codex-sdk/docs"))).toBe(false);
+      for (const path of [
+        "README.md",
+        "README-es.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "SECURITY.md",
+        "lib/main.d.ts",
+        "tests",
+        "examples",
+      ]) expect(existsSync(join(modules, `dotenv/${path}`))).toBe(false);
+      expect(existsSync(join(modules, "dotenv/lib/main.js"))).toBe(true);
+      expect(existsSync(join(modules, "dotenv/config.js"))).toBe(true);
       expect(existsSync(join(modules, "@kordoc/core/dist/commands"))).toBe(false);
       expect(existsSync(join(modules, "openai/internal/qs"))).toBe(false);
       expect(existsSync(join(modules, "unlisted-runtime/runtime.js.map"))).toBe(true);
@@ -120,6 +145,9 @@ describe("F4 dependency-specific package closure", () => {
     try {
       const forbidden = [
         "node_modules/@openai/codex-sdk/examples/demo.js",
+        "node_modules/dotenv/README-es.md",
+        "node_modules/dotenv/CHANGELOG.md",
+        "node_modules/dotenv/LICENSE",
         "node_modules/@kordoc/core/dist/mcp/server.js",
         "node_modules/openai/client/websocket.js",
       ];

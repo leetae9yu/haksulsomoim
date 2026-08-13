@@ -80,6 +80,34 @@ const relocatedRuntime: Readonly<Record<string, Readonly<Record<string, string>>
   "tesseract.js": { src: "runtime" },
 };
 
+const dotenvRuntimeFiles = new Set([
+  "package.json",
+  "config.js",
+  "lib/cli-options.js",
+  "lib/env-options.js",
+  "lib/main.js",
+]);
+
+function pruneDotenvSurface(dependencies: string): void {
+  const base = packageRoot(dependencies, "dotenv");
+  if (!existsSync(base)) return;
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    const relativePath = entry.name;
+    if (entry.isFile() && !dotenvRuntimeFiles.has(relativePath)) {
+      rmSync(join(base, relativePath), { force: true });
+    } else if (entry.isDirectory() && relativePath !== "lib") {
+      rmSync(join(base, relativePath), { force: true, recursive: true });
+    }
+  }
+  const lib = join(base, "lib");
+  if (existsSync(lib)) {
+    for (const entry of readdirSync(lib, { withFileTypes: true })) {
+      if (entry.isFile() && !dotenvRuntimeFiles.has(`lib/${entry.name}`))
+        rmSync(join(lib, entry.name), { force: true });
+    }
+  }
+}
+
 const runtimeManifestFields = new Set([
   "browser",
   "cpu",
@@ -197,6 +225,7 @@ function visitManifests(root: string, directory = root): void {
 export function pruneDependencyMetadata(root: string): void {
   const dependencies = existsSync(join(root, "node_modules")) ? join(root, "node_modules") : root;
   restrictKoreanLawToStdio(dependencies);
+  pruneDotenvSurface(dependencies);
   for (const [name, moves] of Object.entries(relocatedRuntime)) {
     const base = packageRoot(dependencies, name);
     for (const [from, to] of Object.entries(moves)) {

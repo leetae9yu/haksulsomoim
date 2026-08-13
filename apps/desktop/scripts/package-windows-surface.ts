@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const forbiddenPath =
-  /(?:^|\/)(?:readme(?:\.[^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$/iu;
+  /(?:^|\/)(?:readme(?:\.[^/]*)?|docs?|examples?|specs?|tests?|src|source|skills?)(?:\/|$)|(?:\.map|\.d\.[cm]?ts)$|(?:^|\/)(?:cli|mcp)\.(?:js|cjs|mjs)$|(?:^|\/)(?:readme|changelog|history|contributing|security|license|notice|third[_-]?party)(?:\.[^/]*)?$/iu;
 const forbiddenTargetedSurface =
   /(?:^|\/)korean-law-mcp\/build\/(?:setup\.js|server\/)|(?:^|\/)@kordoc\/core\/dist\/(?:commands\/|mcp\/server\.js$)|(?:^|\/)openai\/(?:bin\/cli|client\/websocket|internal\/qs|server\/(?:http|sse))/iu;
 const forbiddenGeneral =
