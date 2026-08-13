@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readdir, rm } from "node:fs/promises";
 import {
   AgentRepositoryKeyPublicationError,
-  agentRepositoryKeyVerifierEntry,
   publishAgentRepositoryKeyMarker,
-} from "./agent-run-repository-key-cleanup";
+  serializeAgentRepositoryKeyMarker,
+} from "./agent-run-repository-key-publication";
 import {
   artifactFingerprint,
   createPublicationArtifact,
@@ -61,14 +61,17 @@ describe("Agent repository marker adversarial capture", () => {
       const current = await publicationFixture("invalid-verifier");
       roots.push(current.root);
 
-      expect(() => agentRepositoryKeyVerifierEntry(verifier)).toThrow(
+      expect(() => serializeAgentRepositoryKeyMarker(verifier)).toThrow(
         AgentRepositoryKeyPublicationError,
       );
       expect(await readdir(current.root)).toEqual([]);
     });
   }
 
-  test("uses only a Windows-safe ASCII verifier entry", () => {
-    expect(agentRepositoryKeyVerifierEntry("a".repeat(64))).toBe(`verifier-${"a".repeat(64)}`);
+  test("serializes one fixed Windows-safe versioned marker", () => {
+    const marker = serializeAgentRepositoryKeyMarker("a".repeat(64));
+    expect(marker.toString("ascii")).toBe(
+      `haksulsomoim-agent-repository-key:v1:${"a".repeat(64)}\n`,
+    );
   });
 });

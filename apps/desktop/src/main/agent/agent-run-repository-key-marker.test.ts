@@ -1,23 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
-import { z } from "zod";
+import { join } from "node:path";
 import { AgentRunRepository } from "./agent-run-repository";
+import { AGENT_REPOSITORY_KEY_MARKER_BYTES } from "./agent-run-repository-key-publication";
 
 const MARKER = ".agent-repository-key";
-const execFileAsync = promisify(execFile);
 const roots: string[] = [];
 const key = new Uint8Array(32).fill(51);
-const childReceiptSchema = z.strictObject({
-  status: z.string(),
-  keyByte: z.number().int(),
-});
-
-type ChildReceipt = z.infer<typeof childReceiptSchema>;
 
 async function root(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "haksul-agent-key-marker-"));
@@ -25,42 +15,14 @@ async function root(): Promise<string> {
   return directory;
 }
 
-async function childOpen(directory: string, keyByte: number): Promise<ChildReceipt> {
-  const moduleUrl = pathToFileURL(
-    join(dirname(fileURLToPath(import.meta.url)), "agent-run-repository.ts"),
-  ).href;
-  const source = `
-    import { AgentRunRepository } from ${JSON.stringify(moduleUrl)};
-    const keyByte = ${JSON.stringify(keyByte)};
-    const repository = new AgentRunRepository({
-      directory: ${JSON.stringify(directory)},
-      encryptionKey: new Uint8Array(32).fill(keyByte),
-    });
-    let status = "ok";
-    try {
-      await repository.activeRunId("process-race-case");
-    } catch (error) {
-      status = error instanceof Error && "code" in error && typeof error.code === "string"
-        ? error.code
-        : "UNKNOWN";
-    }
-    console.log(JSON.stringify({ status, keyByte }));
-  `;
-  const { stdout } = await execFileAsync(process.execPath, ["-e", source], {
-    encoding: "utf8",
-  });
-  return childReceiptSchema.parse(JSON.parse(stdout));
-}
-
 async function markerSnapshot(marker: string): Promise<string> {
-  const entries = (await readdir(marker)).sort();
-  const facts = await Promise.all(
-    entries.map(async (entry) => {
-      const metadata = await stat(join(marker, entry));
-      return { entry, mode: metadata.mode, nlink: metadata.nlink, size: metadata.size };
-    }),
-  );
-  return JSON.stringify(facts);
+  const metadata = await stat(marker);
+  return JSON.stringify({
+    content: (await readFile(marker)).toString("hex"),
+    mode: metadata.mode,
+    nlink: metadata.nlink,
+    size: metadata.size,
+  });
 }
 
 afterEach(async () => {
@@ -70,7 +32,7 @@ afterEach(async () => {
 });
 
 describe("Agent repository key marker", () => {
-  test("creates one fixed private marker directory shared by same-key instances", async () => {
+  test("creates one fixed private authenticated marker file", async () => {
     const directory = await root();
     const left = new AgentRunRepository({ directory, encryptionKey: key });
     const right = new AgentRunRepository({ directory, encryptionKey: key });
@@ -79,12 +41,15 @@ describe("Agent repository key marker", () => {
       await Promise.all([left.activeRunId("case-left"), right.activeRunId("case-right")]),
     ).toEqual([undefined, undefined]);
     expect(await readdir(directory)).toEqual([MARKER]);
-    expect((await stat(join(directory, MARKER))).mode & 0o777).toBe(0o700);
-    const [entry] = await readdir(join(directory, MARKER));
-    if (entry === undefined) throw new Error("expected verifier entry");
-    expect(entry).toMatch(/^verifier-[a-f0-9]{64}$/u);
-    expect((await stat(join(directory, MARKER, entry))).mode & 0o777).toBe(0o600);
-    expect((await stat(join(directory, MARKER, entry))).size).toBe(0);
+    const marker = join(directory, MARKER);
+    const metadata = await stat(marker);
+    expect(metadata.isFile()).toBe(true);
+    expect(metadata.mode & 0o777).toBe(0o600);
+    expect(metadata.nlink).toBe(1);
+    expect(metadata.size).toBe(AGENT_REPOSITORY_KEY_MARKER_BYTES);
+    expect(await readFile(marker, "ascii")).toMatch(
+      /^haksulsomoim-agent-repository-key:v1:[a-f0-9]{64}\n$/u,
+    );
   });
 
   test("allows exactly one key to initialize a same-process first-open race", async () => {
@@ -110,50 +75,68 @@ describe("Agent repository key marker", () => {
     expect(await readdir(directory)).toEqual([MARKER]);
   });
 
-  test("allows exactly one key across a child-process first-open race", async () => {
-    const parent = await root();
-    const directory = join(parent, "repository");
-    await mkdir(directory, { mode: 0o700 });
-    const receipts = await Promise.all([childOpen(directory, 54), childOpen(directory, 55)]);
-    const winner = receipts.find((receipt) => receipt.status === "ok");
-    const loser = receipts.find((receipt) => receipt.status !== "ok");
-    if (winner === undefined || loser === undefined) throw new Error("expected one marker winner");
+  test("rejects a wrong key without changing the marker", async () => {
+    const directory = await root();
+    const marker = join(directory, MARKER);
+    await new AgentRunRepository({ directory, encryptionKey: key }).activeRunId("key-owner");
+    const before = await markerSnapshot(marker);
+    const wrong = new AgentRunRepository({
+      directory,
+      encryptionKey: new Uint8Array(32).fill(52),
+    });
 
-    expect(loser.status).toBe("AGENT_REPOSITORY_KEY_MISMATCH");
-    expect((await childOpen(directory, winner.keyByte)).status).toBe("ok");
-    expect((await childOpen(directory, loser.keyByte)).status).toBe(
-      "AGENT_REPOSITORY_KEY_MISMATCH",
-    );
-    expect(await readdir(directory)).toEqual([MARKER]);
-    expect(await readdir(parent)).toEqual(["repository"]);
+    await expect(wrong.activeRunId("wrong-key")).rejects.toMatchObject({
+      code: "AGENT_REPOSITORY_KEY_MISMATCH",
+    });
+    expect(await markerSnapshot(marker)).toBe(before);
   });
 
-  for (const corruption of ["truncated", "malformed", "tampered"] as const) {
+  for (const corruption of ["crash-partial", "malformed", "tampered"] as const) {
     test(`rejects a ${corruption} marker without changing it`, async () => {
       const directory = await root();
       const marker = join(directory, MARKER);
       const repository = new AgentRunRepository({ directory, encryptionKey: key });
       await repository.activeRunId("marker-case");
-      const [entry] = await readdir(marker);
-      if (entry === undefined) throw new Error("expected verifier entry");
-      if (corruption === "truncated") {
-        await writeFile(join(marker, entry), "x", "utf8");
+      if (corruption === "crash-partial") {
+        await writeFile(marker, "haksulsomoim-agent-repository-key:v1:", { mode: 0o600 });
       } else if (corruption === "malformed") {
-        await writeFile(join(marker, "legacy-marker.json"), "legacy", { mode: 0o600 });
+        await writeFile(marker, Buffer.alloc(AGENT_REPOSITORY_KEY_MARKER_BYTES, 0x78), {
+          mode: 0o600,
+        });
       } else {
-        await rename(join(marker, entry), join(marker, `verifier-${"0".repeat(64)}`));
+        const data = await readFile(marker);
+        data[data.byteLength - 2] = data[data.byteLength - 2] === 0x30 ? 0x31 : 0x30;
+        await writeFile(marker, data, { mode: 0o600 });
       }
       const before = await markerSnapshot(marker);
+      const expectedCode =
+        corruption === "tampered"
+          ? "AGENT_REPOSITORY_KEY_MISMATCH"
+          : "AGENT_REPOSITORY_KEY_MARKER_INVALID";
 
       await expect(repository.activeRunId("marker-case")).rejects.toMatchObject({
-        code:
-          corruption === "tampered"
-            ? "AGENT_REPOSITORY_KEY_MISMATCH"
-            : "AGENT_REPOSITORY_KEY_MARKER_INVALID",
+        code: expectedCode,
+      });
+      await expect(repository.activeRunId("marker-case-retry")).rejects.toMatchObject({
+        code: expectedCode,
       });
       expect(await markerSnapshot(marker)).toBe(before);
     });
   }
+
+  test("fails closed on the unreleased marker-directory layout", async () => {
+    const directory = await root();
+    const marker = join(directory, MARKER);
+    const legacyEntry = `verifier-${"a".repeat(64)}`;
+    await mkdir(marker, { mode: 0o700 });
+    await writeFile(join(marker, legacyEntry), "", { mode: 0o600 });
+    const repository = new AgentRunRepository({ directory, encryptionKey: key });
+
+    await expect(repository.activeRunId("old-layout")).rejects.toMatchObject({
+      code: "AGENT_REPOSITORY_KEY_MARKER_INVALID",
+    });
+    expect(await readdir(marker)).toEqual([legacyEntry]);
+  });
 
   test("does not initialize a markerless legacy repository", async () => {
     const directory = await root();

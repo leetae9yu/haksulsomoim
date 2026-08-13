@@ -153,6 +153,6 @@ describe("Agent repository canonical key-marker paths", () => {
       code: "AGENT_REPOSITORY_KEY_MARKER_INVALID",
     });
     expect(await readlink(markerLink)).toBe(before);
-    expect(await readdir(join(donor, MARKER))).toHaveLength(1);
+    expect((await lstat(join(donor, MARKER))).isFile()).toBe(true);
   });
 });

@@ -50,16 +50,17 @@ async function artifactFingerprint(path: string): Promise<string> {
 async function createAttackerArtifact(
   kind: string,
   directory: string,
+  exact = false,
 ): Promise<Readonly<{ name: string; path: string }>> {
   const suffix = kind === "attacker-format" ? `${"a".repeat(24)}.tmp` : `${kind}.tmp`;
-  const name = `.agent-repository-key.${suffix}`;
+  const name = exact ? ".agent-repository-key" : `.agent-repository-key.${suffix}`;
   const path = join(directory, name);
   if (kind === "directory") {
     await mkdir(path, { mode: 0o700 });
     await writeFile(join(path, "payload"), "attacker-directory", { mode: 0o600 });
   } else if (kind === "symlink" || kind === "hardlink") {
     const external = await root();
-    const target = join(external, "attacker-target");
+    const target = join(external, `attacker-target-${kind}`);
     await writeFile(target, `attacker-${kind}`, { mode: 0o600 });
     if (kind === "symlink") await symlink(target, path);
     else await link(target, path);
@@ -76,6 +77,20 @@ afterEach(async () => {
 });
 
 describe("Agent repository key marker attacker artifacts", () => {
+  for (const kind of ["file", "hardlink", "symlink", "directory"]) {
+    test(`rejects an exact marker ${kind} without mutation`, async () => {
+      const directory = await root();
+      const artifact = await createAttackerArtifact(kind, directory, true);
+      const before = await artifactFingerprint(artifact.path);
+      const repository = new AgentRunRepository({ directory, encryptionKey: key });
+
+      await expect(repository.activeRunId("exact-artifact-case")).rejects.toMatchObject({
+        code: "AGENT_REPOSITORY_KEY_MARKER_INVALID",
+      });
+      expect(await artifactFingerprint(artifact.path)).toBe(before);
+    });
+  }
+
   for (const kind of [
     "stale",
     "malformed",

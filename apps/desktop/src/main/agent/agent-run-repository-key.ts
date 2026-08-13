@@ -1,24 +1,23 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, open, readdir } from "node:fs/promises";
-import { join } from "node:path";
-import {
-  AgentRepositoryKeyPublicationError,
-  parseAgentRepositoryKeyVerifierEntry,
-  publishAgentRepositoryKeyMarker,
-} from "./agent-run-repository-key-cleanup";
+import { closeSync, constants, fstatSync, readSync } from "node:fs";
+import { open, readdir } from "node:fs/promises";
+import { agentRepositoryKeyNativeBinding } from "./agent-run-repository-key-native";
 import {
   AGENT_REPOSITORY_KEY_MARKER,
   AgentRepositoryDirectoryPin,
-  agentRepositoryKeyMarkerPath,
   type CanonicalAgentRepositoryDirectory,
 } from "./agent-run-repository-key-path";
 import { withAgentRepositoryKeyProcessLock } from "./agent-run-repository-key-process-lock";
+import {
+  AGENT_REPOSITORY_KEY_MARKER_BYTES,
+  AgentRepositoryKeyPublicationError,
+  parseAgentRepositoryKeyMarker,
+  publishAgentRepositoryKeyMarker,
+} from "./agent-run-repository-key-publication";
 
 export { AGENT_REPOSITORY_KEY_MARKER } from "./agent-run-repository-key-path";
 
 const verificationTails = new Map<string, Promise<void>>();
-
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
@@ -31,7 +30,6 @@ export class AgentRepositoryKeyMismatchError extends Error {
     this.name = "AgentRepositoryKeyMismatchError";
   }
 }
-
 export class AgentRepositoryKeyMarkerError extends Error {
   readonly code = "AGENT_REPOSITORY_KEY_MARKER_INVALID";
 
@@ -40,7 +38,6 @@ export class AgentRepositoryKeyMarkerError extends Error {
     this.name = "AgentRepositoryKeyMarkerError";
   }
 }
-
 export class AgentRepositoryKeyVerifier {
   readonly #directory: AgentRepositoryDirectoryPin;
   readonly #key: Uint8Array;
@@ -49,7 +46,6 @@ export class AgentRepositoryKeyVerifier {
     this.#directory = new AgentRepositoryDirectoryPin(directory);
     this.#key = Uint8Array.from(key);
   }
-
   async verify(): Promise<void> {
     let directory: CanonicalAgentRepositoryDirectory;
     try {
@@ -114,62 +110,104 @@ export class AgentRepositoryKeyVerifier {
   }
 
   async #readMarker(directory: CanonicalAgentRepositoryDirectory): Promise<string> {
-    const markerPath = agentRepositoryKeyMarkerPath(directory.path);
-    const marker = await open(
-      markerPath,
+    const parent = await open(
+      directory.path,
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     );
     try {
-      const metadata = await marker.stat();
-      if (!metadata.isDirectory() || (metadata.mode & 0o777) !== 0o700) {
-        throw new AgentRepositoryKeyMarkerError(
-          "Agent repository key marker is not a safe directory",
-        );
+      const parentMetadata = await parent.stat();
+      if (
+        !parentMetadata.isDirectory() ||
+        parentMetadata.dev !== directory.dev ||
+        parentMetadata.ino !== directory.ino
+      ) {
+        throw new AgentRepositoryKeyMarkerError("Agent repository key marker parent changed");
       }
-      const entries = await readdir(markerPath);
-      const [entryName] = entries;
-      if (entryName === undefined || entries.length !== 1) {
-        throw new AgentRepositoryKeyMarkerError("Agent repository key marker layout is invalid");
-      }
-      const verifier = parseAgentRepositoryKeyVerifierEntry(entryName);
-      if (verifier === undefined) {
-        throw new AgentRepositoryKeyMarkerError("Agent repository key verifier is invalid");
-      }
-      const entryPath = join(markerPath, entryName);
-      const entry = await open(entryPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+
+      const binding = agentRepositoryKeyNativeBinding();
+      const markerFd = binding.openBeneath(
+        parent.fd,
+        AGENT_REPOSITORY_KEY_MARKER,
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      ).fd;
       try {
-        const [openedEntry, linkedEntry, linkedMarker] = await Promise.all([
-          entry.stat(),
-          lstat(entryPath),
-          lstat(markerPath),
-        ]);
+        const opened = fstatSync(markerFd);
         if (
-          !openedEntry.isFile() ||
-          openedEntry.size !== 0 ||
-          openedEntry.nlink !== 1 ||
-          (openedEntry.mode & 0o777) !== 0o600 ||
-          !linkedEntry.isFile() ||
-          linkedEntry.dev !== openedEntry.dev ||
-          linkedEntry.ino !== openedEntry.ino ||
-          !linkedMarker.isDirectory() ||
-          linkedMarker.dev !== metadata.dev ||
-          linkedMarker.ino !== metadata.ino
+          !opened.isFile() ||
+          opened.size !== AGENT_REPOSITORY_KEY_MARKER_BYTES ||
+          opened.nlink !== 1 ||
+          (opened.mode & 0o777) !== 0o600
         ) {
-          throw new AgentRepositoryKeyMarkerError("Agent repository key marker identity changed");
+          throw new AgentRepositoryKeyMarkerError("Agent repository key marker is not a safe file");
         }
+
+        const bounded = Buffer.alloc(AGENT_REPOSITORY_KEY_MARKER_BYTES + 1);
+        let bytesRead = 0;
+        while (bytesRead < bounded.byteLength) {
+          const count = readSync(
+            markerFd,
+            bounded,
+            bytesRead,
+            bounded.byteLength - bytesRead,
+            null,
+          );
+          if (count === 0) break;
+          bytesRead += count;
+        }
+        if (bytesRead !== AGENT_REPOSITORY_KEY_MARKER_BYTES) {
+          throw new AgentRepositoryKeyMarkerError("Agent repository key marker length is invalid");
+        }
+
+        const afterRead = fstatSync(markerFd);
+        let pathFd: number | undefined;
+        try {
+          pathFd = binding.openBeneath(
+            parent.fd,
+            AGENT_REPOSITORY_KEY_MARKER,
+            constants.O_RDONLY | constants.O_NOFOLLOW,
+          ).fd;
+          const linked = fstatSync(pathFd);
+          if (
+            !afterRead.isFile() ||
+            afterRead.dev !== opened.dev ||
+            afterRead.ino !== opened.ino ||
+            afterRead.size !== AGENT_REPOSITORY_KEY_MARKER_BYTES ||
+            afterRead.nlink !== 1 ||
+            (afterRead.mode & 0o777) !== 0o600 ||
+            !linked.isFile() ||
+            linked.dev !== opened.dev ||
+            linked.ino !== opened.ino ||
+            linked.size !== AGENT_REPOSITORY_KEY_MARKER_BYTES ||
+            linked.nlink !== 1 ||
+            (linked.mode & 0o777) !== 0o600
+          ) {
+            throw new AgentRepositoryKeyMarkerError("Agent repository key marker identity changed");
+          }
+        } catch (error) {
+          if (error instanceof AgentRepositoryKeyMarkerError) throw error;
+          throw new AgentRepositoryKeyMarkerError("Agent repository key marker identity changed", {
+            cause: error,
+          });
+        } finally {
+          if (pathFd !== undefined) closeSync(pathFd);
+        }
+
+        const verifier = parseAgentRepositoryKeyMarker(bounded.subarray(0, bytesRead));
+        if (verifier === undefined) {
+          throw new AgentRepositoryKeyMarkerError("Agent repository key marker is malformed");
+        }
+        return verifier;
       } finally {
-        await entry.close();
+        closeSync(markerFd);
       }
-      return verifier;
     } finally {
-      await marker.close();
+      await parent.close();
     }
   }
 
   async #publish(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
     try {
-      const result = await publishAgentRepositoryKeyMarker(directory, this.#verifier());
-      if (result === "published") await this.#syncDirectory(directory);
+      await publishAgentRepositoryKeyMarker(directory, this.#verifier());
     } catch (error) {
       if (error instanceof AgentRepositoryKeyPublicationError) {
         throw new AgentRepositoryKeyMarkerError("Agent repository key marker publication failed", {
@@ -206,15 +244,6 @@ export class AgentRepositoryKeyVerifier {
     } finally {
       release();
       if (verificationTails.get(lockKey) === tail) verificationTails.delete(lockKey);
-    }
-  }
-
-  async #syncDirectory(canonical: CanonicalAgentRepositoryDirectory): Promise<void> {
-    const directory = await open(canonical.path, "r");
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
     }
   }
 }

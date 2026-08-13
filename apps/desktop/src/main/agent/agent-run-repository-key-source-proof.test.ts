@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { readdir, rename, rm } from "node:fs/promises";
+import { readFile, rename, rm } from "node:fs/promises";
 import {
-  agentRepositoryKeyVerifierEntry,
+  type AgentRepositoryKeyPublicationCheckpoint,
   publishAgentRepositoryKeyMarker,
-} from "./agent-run-repository-key-cleanup";
+  serializeAgentRepositoryKeyMarker,
+} from "./agent-run-repository-key-publication";
 import {
   artifactFingerprint,
   createPublicationArtifact,
@@ -13,55 +14,39 @@ import {
 } from "./agent-run-repository-key-publication.fixtures";
 
 const roots: string[] = [];
+type ReplacementPhase = Extract<
+  AgentRepositoryKeyPublicationCheckpoint["phase"],
+  "after-source-created" | "after-source-written"
+>;
 
-async function swapMarkerAfterProof(kind: PublicationArtifactKind): Promise<void> {
-  const current = await publicationFixture(`post-proof-${kind}`);
+async function swapFixedMarker(
+  kind: PublicationArtifactKind,
+  phase: ReplacementPhase,
+): Promise<void> {
+  const current = await publicationFixture(`${phase}-${kind}`);
   roots.push(current.root);
   const attacker = await createPublicationArtifact(
     kind,
     current.staged,
     current.root,
-    `post-proof-${kind}`,
+    `${phase}-${kind}`,
   );
 
-  expect(
-    await publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
-      checkpoint: async (checkpoint) => {
-        if (checkpoint.phase !== "after-source-proof") return;
-        await rename(current.marker, current.moved);
-        await rename(current.staged, current.marker);
-      },
-    }),
-  ).toBe("published");
+  const publication = publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
+    checkpoint: async (checkpoint) => {
+      if (checkpoint.phase !== phase) return;
+      await rename(current.marker, current.moved);
+      await rename(current.staged, current.marker);
+    },
+  });
 
+  await expect(publication).rejects.toMatchObject({
+    code: "AGENT_REPOSITORY_KEY_MARKER_PUBLICATION_FAILED",
+  });
   expect(await artifactFingerprint(current.marker)).toEqual(attacker);
-  expect(await readdir(current.moved)).toEqual([agentRepositoryKeyVerifierEntry(current.verifier)]);
-}
-
-async function swapVerifierAfterCapture(kind: PublicationArtifactKind): Promise<void> {
-  const current = await publicationFixture(`post-verifier-${kind}`);
-  roots.push(current.root);
-  const attacker = await createPublicationArtifact(
-    kind,
-    current.staged,
-    current.root,
-    `post-verifier-${kind}`,
+  expect((await readFile(current.moved)).toString("hex")).toBe(
+    serializeAgentRepositoryKeyMarker(current.verifier).toString("hex"),
   );
-  let verifierPath = "";
-
-  expect(
-    await publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
-      checkpoint: async (checkpoint) => {
-        if (checkpoint.phase !== "after-verifier-captured") return;
-        verifierPath = checkpoint.verifierPath;
-        await rename(verifierPath, current.moved);
-        await rename(current.staged, verifierPath);
-      },
-    }),
-  ).toBe("published");
-
-  expect(verifierPath).not.toBe("");
-  expect(await artifactFingerprint(verifierPath)).toEqual(attacker);
 }
 
 afterEach(async () => {
@@ -70,14 +55,14 @@ afterEach(async () => {
   );
 });
 
-describe("Agent repository marker handle-relative source proof", () => {
+describe("Agent repository marker handle-relative identity proof", () => {
   for (const kind of publicationArtifactKinds) {
-    test(`preserves a ${kind} marker replacement after source proof`, async () => {
-      await swapMarkerAfterProof(kind);
+    test(`preserves a ${kind} replacement after atomic marker creation`, async () => {
+      await swapFixedMarker(kind, "after-source-created");
     });
 
-    test(`preserves a ${kind} verifier replacement after capture`, async () => {
-      await swapVerifierAfterCapture(kind);
+    test(`preserves a ${kind} replacement after marker fsync`, async () => {
+      await swapFixedMarker(kind, "after-source-written");
     });
   }
 });

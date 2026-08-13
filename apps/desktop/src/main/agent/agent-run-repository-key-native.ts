@@ -3,11 +3,9 @@ import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-type NativeCreatedDirectory = Readonly<{ fd: number }>;
 type NativeOpenedFile = Readonly<{ fd: number }>;
 
 export type AgentRepositoryKeyNativeBinding = Readonly<{
-  createDirectoryBeneath(rootFd: number, name: string, mode: number): NativeCreatedDirectory;
   openBeneath(rootFd: number, relativePath: string, flags: number): NativeOpenedFile;
 }>;
 
@@ -17,8 +15,6 @@ function isNativeBinding(value: unknown): value is AgentRepositoryKeyNativeBindi
   return (
     typeof value === "object" &&
     value !== null &&
-    "createDirectoryBeneath" in value &&
-    typeof value.createDirectoryBeneath === "function" &&
     "openBeneath" in value &&
     typeof value.openBeneath === "function"
   );
