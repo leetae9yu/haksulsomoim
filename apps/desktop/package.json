@@ -26,7 +26,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@openai/codex": "0.147.0",
-    "@openclaw/fs-safe": "0.5.5",
+    "@openclaw/fs-safe": "https://github.com/leetae9yu/fs-safe/releases/download/marker-owner-6501155/openclaw-fs-safe-0.5.5.tgz",
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/kor": "1.0.0",
     "korean-law-mcp": "4.9.6",

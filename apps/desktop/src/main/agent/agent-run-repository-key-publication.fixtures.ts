@@ -5,18 +5,23 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_REPOSITORY_KEY_MARKER } from "./agent-run-repository-key-path";
+import {
+  AGENT_REPOSITORY_KEY_MARKER,
+  type CanonicalAgentRepositoryDirectory,
+} from "./agent-run-repository-key-path";
 
 export const publicationArtifactKinds = ["file", "hardlink", "symlink", "directory"] as const;
 
 export type PublicationArtifactKind = (typeof publicationArtifactKinds)[number];
 
 export type PublicationFixture = Readonly<{
+  directory: CanonicalAgentRepositoryDirectory;
   marker: string;
   moved: string;
   root: string;
@@ -33,7 +38,9 @@ export type ArtifactFingerprint = Readonly<{
 
 export async function publicationFixture(label: string): Promise<PublicationFixture> {
   const root = await mkdtemp(join(tmpdir(), `haksul-source-unlink-${label}-`));
+  const metadata = await stat(root);
   return {
+    directory: { path: root, dev: metadata.dev, ino: metadata.ino },
     marker: join(root, AGENT_REPOSITORY_KEY_MARKER),
     moved: join(root, "owned-marker-moved"),
     root,

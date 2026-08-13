@@ -36,7 +36,7 @@ async function insertVerifierDestination(
   let verifierPath = "";
 
   const error = await publicationFailure(
-    publishAgentRepositoryKeyMarker(current.marker, current.verifier, {
+    publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
       checkpoint: async (checkpoint) => {
         if (checkpoint.phase !== "after-source-proof") return;
         verifierPath = checkpoint.verifierPath;
@@ -73,11 +73,13 @@ describe("Agent repository marker no-replace verifier capture", () => {
   test("leaves a completed marker unchanged when publication is contended", async () => {
     const current = await publicationFixture("completed-contention");
     roots.push(current.root);
-    await publishAgentRepositoryKeyMarker(current.marker, current.verifier);
+    await publishAgentRepositoryKeyMarker(current.directory, current.verifier);
     const [entry] = await readdir(current.marker);
     if (entry === undefined) throw new Error("expected verifier entry");
 
-    expect(await publishAgentRepositoryKeyMarker(current.marker, "b".repeat(64))).toBe("contended");
+    expect(await publishAgentRepositoryKeyMarker(current.directory, "b".repeat(64))).toBe(
+      "contended",
+    );
     expect(await readdir(current.marker)).toEqual([entry]);
     expect(await readFile(`${current.marker}/${entry}`, "utf8")).toBe("");
   });

@@ -168,10 +168,7 @@ export class AgentRepositoryKeyVerifier {
 
   async #publish(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
     try {
-      const result = await publishAgentRepositoryKeyMarker(
-        agentRepositoryKeyMarkerPath(directory.path),
-        this.#verifier(),
-      );
+      const result = await publishAgentRepositoryKeyMarker(directory, this.#verifier());
       if (result === "published") await this.#syncDirectory(directory);
     } catch (error) {
       if (error instanceof AgentRepositoryKeyPublicationError) {

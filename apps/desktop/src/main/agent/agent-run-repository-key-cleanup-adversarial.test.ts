@@ -20,7 +20,7 @@ async function insertBeforeCapture(kind: PublicationArtifactKind): Promise<void>
   roots.push(current.root);
   let attacker: Awaited<ReturnType<typeof createPublicationArtifact>> | undefined;
 
-  const result = await publishAgentRepositoryKeyMarker(current.marker, current.verifier, {
+  const result = await publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
     checkpoint: async (checkpoint) => {
       if (checkpoint.phase !== "before-source-capture") return;
       attacker = await createPublicationArtifact(

@@ -1,14 +1,22 @@
 import { closeSync, constants, fchmodSync, fstatSync, fsyncSync } from "node:fs";
-import { lstat, mkdir, open } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { open } from "node:fs/promises";
+import { join } from "node:path";
+import { agentRepositoryKeyNativeBinding } from "./agent-run-repository-key-native";
+import {
+  AGENT_REPOSITORY_KEY_MARKER,
+  agentRepositoryKeyMarkerPath,
+  type CanonicalAgentRepositoryDirectory,
+} from "./agent-run-repository-key-path";
 
 const VERIFIER_PREFIX = "verifier-";
 const VERIFIER_PATTERN = /^[a-f0-9]{64}$/u;
-const require = createRequire(import.meta.url);
 
 export type AgentRepositoryKeyPublicationCheckpoint = Readonly<{
-  phase: "before-source-capture" | "after-source-proof" | "after-verifier-captured";
+  phase:
+    | "before-source-capture"
+    | "after-source-created"
+    | "after-source-proof"
+    | "after-verifier-captured";
   sourcePath: string;
   verifierPath: string;
 }>;
@@ -17,44 +25,8 @@ export type AgentRepositoryKeyPublicationControl = Readonly<{
   checkpoint?: (checkpoint: AgentRepositoryKeyPublicationCheckpoint) => Promise<void>;
 }>;
 
-type NativeOpenResult = Readonly<{ fd: number }>;
-type NativeBinding = Readonly<{
-  openBeneath(rootFd: number, relativePath: string, flags: number): NativeOpenResult;
-}>;
-
-let loadedNativeBinding: NativeBinding | undefined;
-
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
-}
-
-function isNativeBinding(value: unknown): value is NativeBinding {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "openBeneath" in value &&
-    typeof value.openBeneath === "function"
-  );
-}
-
-function nativeBinding(): NativeBinding {
-  if (loadedNativeBinding !== undefined) return loadedNativeBinding;
-  const packageRoot = dirname(require.resolve("@openclaw/fs-safe/package.json"));
-  const loader: unknown = require(join(packageRoot, "dist/native.js"));
-  if (
-    typeof loader !== "object" ||
-    loader === null ||
-    !("requireNativeBinding" in loader) ||
-    typeof loader.requireNativeBinding !== "function"
-  ) {
-    throw new Error("Agent repository native filesystem helper is invalid");
-  }
-  const binding: unknown = loader.requireNativeBinding();
-  if (!isNativeBinding(binding)) {
-    throw new Error("Agent repository native filesystem binding is invalid");
-  }
-  loadedNativeBinding = binding;
-  return binding;
 }
 
 function syncBestEffort(fd: number): void {
@@ -90,94 +62,122 @@ export function parseAgentRepositoryKeyVerifierEntry(entry: string): string | un
 }
 
 export async function publishAgentRepositoryKeyMarker(
-  markerPath: string,
+  canonical: CanonicalAgentRepositoryDirectory,
   verifier: string,
   control: AgentRepositoryKeyPublicationControl = {},
 ): Promise<"contended" | "published"> {
-  const verifierPath = join(markerPath, agentRepositoryKeyVerifierEntry(verifier));
-  await control.checkpoint?.({
-    phase: "before-source-capture",
-    sourcePath: markerPath,
-    verifierPath,
-  });
+  const markerPath = agentRepositoryKeyMarkerPath(canonical.path);
+  const verifierEntry = agentRepositoryKeyVerifierEntry(verifier);
+  const verifierPath = join(markerPath, verifierEntry);
+  let parent: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    await mkdir(markerPath, { mode: 0o700 });
+    parent = await open(
+      canonical.path,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const metadata = await parent.stat();
+    if (
+      !metadata.isDirectory() ||
+      metadata.dev !== canonical.dev ||
+      metadata.ino !== canonical.ino
+    ) {
+      throw new AgentRepositoryKeyPublicationError(
+        "Agent repository key marker parent identity changed",
+        markerPath,
+      );
+    }
   } catch (error) {
-    if (isNodeError(error, "EEXIST")) return "contended";
+    await parent?.close().catch(() => undefined);
+    if (error instanceof AgentRepositoryKeyPublicationError) throw error;
     throw new AgentRepositoryKeyPublicationError(
-      "Agent repository key marker capture failed",
+      "Agent repository key marker parent is not a safe directory",
       markerPath,
       { cause: error },
     );
   }
 
-  let directory: Awaited<ReturnType<typeof open>>;
   try {
-    directory = await open(
-      markerPath,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-  } catch (error) {
-    throw new AgentRepositoryKeyPublicationError(
-      "Agent repository key marker source is not a safe directory",
-      markerPath,
-      { cause: error },
-    );
-  }
-  try {
-    const [opened, linked] = await Promise.all([directory.stat(), lstat(markerPath)]);
-    if (
-      !opened.isDirectory() ||
-      !linked.isDirectory() ||
-      linked.isSymbolicLink() ||
-      opened.dev !== linked.dev ||
-      opened.ino !== linked.ino
-    ) {
-      throw new AgentRepositoryKeyPublicationError(
-        "Agent repository key marker source identity changed",
-        markerPath,
-      );
-    }
     await control.checkpoint?.({
-      phase: "after-source-proof",
+      phase: "before-source-capture",
       sourcePath: markerPath,
       verifierPath,
     });
 
-    let verifierFd: number | undefined;
+    const binding = agentRepositoryKeyNativeBinding();
+    let directoryFd: number;
     try {
-      verifierFd = nativeBinding().openBeneath(
-        directory.fd,
-        agentRepositoryKeyVerifierEntry(verifier),
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      directoryFd = binding.createDirectoryBeneath(
+        parent.fd,
+        AGENT_REPOSITORY_KEY_MARKER,
+        0o700,
       ).fd;
-      fchmodSync(verifierFd, 0o600);
-      const metadata = fstatSync(verifierFd);
-      if (!metadata.isFile() || metadata.size !== 0) {
-        throw new AgentRepositoryKeyPublicationError(
-          "Agent repository key verifier capture is invalid",
-          markerPath,
-        );
-      }
-      syncBestEffort(verifierFd);
+    } catch (error) {
+      if (isNodeError(error, "EEXIST")) return "contended";
+      throw new AgentRepositoryKeyPublicationError(
+        "Agent repository key marker capture failed",
+        markerPath,
+        { cause: error },
+      );
+    }
+
+    try {
       await control.checkpoint?.({
-        phase: "after-verifier-captured",
+        phase: "after-source-created",
         sourcePath: markerPath,
         verifierPath,
       });
+      fchmodSync(directoryFd, 0o700);
+      const directory = fstatSync(directoryFd);
+      if (!directory.isDirectory()) {
+        throw new AgentRepositoryKeyPublicationError(
+          "Agent repository key marker source is not a safe directory",
+          markerPath,
+        );
+      }
+      await control.checkpoint?.({
+        phase: "after-source-proof",
+        sourcePath: markerPath,
+        verifierPath,
+      });
+
+      let verifierFd: number | undefined;
+      try {
+        verifierFd = binding.openBeneath(
+          directoryFd,
+          verifierEntry,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        ).fd;
+        fchmodSync(verifierFd, 0o600);
+        const metadata = fstatSync(verifierFd);
+        if (!metadata.isFile() || metadata.size !== 0) {
+          throw new AgentRepositoryKeyPublicationError(
+            "Agent repository key verifier capture is invalid",
+            markerPath,
+          );
+        }
+        syncBestEffort(verifierFd);
+        await control.checkpoint?.({
+          phase: "after-verifier-captured",
+          sourcePath: markerPath,
+          verifierPath,
+        });
+      } finally {
+        if (verifierFd !== undefined) closeSync(verifierFd);
+      }
+      syncBestEffort(directoryFd);
+      syncBestEffort(parent.fd);
+      return "published";
+    } catch (error) {
+      if (error instanceof AgentRepositoryKeyPublicationError) throw error;
+      throw new AgentRepositoryKeyPublicationError(
+        "Agent repository key verifier publication failed",
+        markerPath,
+        { cause: error },
+      );
     } finally {
-      if (verifierFd !== undefined) closeSync(verifierFd);
+      closeSync(directoryFd);
     }
-    syncBestEffort(directory.fd);
-    return "published";
-  } catch (error) {
-    if (error instanceof AgentRepositoryKeyPublicationError) throw error;
-    throw new AgentRepositoryKeyPublicationError(
-      "Agent repository key verifier publication failed",
-      markerPath,
-      { cause: error },
-    );
   } finally {
-    await directory.close();
+    await parent.close();
   }
 }

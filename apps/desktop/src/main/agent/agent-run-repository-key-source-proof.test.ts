@@ -25,7 +25,7 @@ async function swapMarkerAfterProof(kind: PublicationArtifactKind): Promise<void
   );
 
   expect(
-    await publishAgentRepositoryKeyMarker(current.marker, current.verifier, {
+    await publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
       checkpoint: async (checkpoint) => {
         if (checkpoint.phase !== "after-source-proof") return;
         await rename(current.marker, current.moved);
@@ -50,7 +50,7 @@ async function swapVerifierAfterCapture(kind: PublicationArtifactKind): Promise<
   let verifierPath = "";
 
   expect(
-    await publishAgentRepositoryKeyMarker(current.marker, current.verifier, {
+    await publishAgentRepositoryKeyMarker(current.directory, current.verifier, {
       checkpoint: async (checkpoint) => {
         if (checkpoint.phase !== "after-verifier-captured") return;
         verifierPath = checkpoint.verifierPath;
