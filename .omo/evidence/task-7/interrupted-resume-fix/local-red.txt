@@ -1,0 +1,85 @@
+bun test v1.3.14 (0d9b296a)
+
+src/renderer/src/agent-workspace-projection.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'acceptAgentProjectionEvent' not found in module '/home/opc/projects/haksulsomoim/apps/desktop/src/renderer/src/agent-workspace-projection.ts'.
+-------------------------------
+
+
+../../.omo/evidence/task-7/independent-race-final/adversarial-interrupted-resume.test.tsx:
+19 | });
+20 |
+21 | afterEach(cleanup);
+22 |
+23 | test("accepts a higher-revision active projection when explicitly resuming a restart interruption", () => {
+24 |   expect(acceptAgentProjection(interrupted, resumed)).toEqual(resumed);
+                                                           ^
+error: expect(received).toEqual(expected)
+
+  {
+    "budget": {
+      "decisionsRemaining": 11,
+      "durationMsRemaining": 290000,
+      "toolsRemaining": 7,
+    },
+    "caseId": "case-1",
+    "citations": [],
+    "goal": {
+      "caseId": "case-1",
+      "kind": "civil-recovery",
+      "objective": "prepare-civil-demand",
+    },
+    "lastStepId": "step-inspect-done",
+    "pendingApproval": null,
+-   "revision": 6,
++   "revision": 5,
+    "runId": "run-case-1",
+    "state": {
+-     "kind": "active",
++     "interruption": {
++       "kind": "application-restarted",
++     },
++     "kind": "interrupted",
+    },
+    "steps": [
+      {
+        "kind": "tool-started",
+        "stepId": "step-inspect",
+        "toolName": "inspect-masked-case",
+      },
+      {
+        "kind": "tool-finished",
+        "outcome": "completed",
+        "stepId": "step-inspect-done",
+        "toolName": "inspect-masked-case",
+      },
+    ],
+  }
+
+- Expected  - 2
++ Received  + 5
+
+      at <anonymous> (/home/opc/projects/haksulsomoim/.omo/evidence/task-7/independent-race-final/adversarial-interrupted-resume.test.tsx:24:55)
+(fail) accepts a higher-revision active projection when explicitly resuming a restart interruption [0.75ms]
+39 |   await waitFor(() =>
+40 |     expect(screen.getByTitle(contextDigest)).toBeTruthy(),
+41 |   );
+42 |   await user.click(screen.getByRole("button", { name: "명시적으로 재개" }));
+43 |   await waitFor(() => expect(resumeAgentRun).toHaveBeenCalledTimes(1));
+44 |   expect(screen.getByTestId("agent-workspace").dataset.agentStatus).toBe("running");
+                                                                         ^
+error: expect(received).toBe(expected)
+
+Expected: "running"
+Received: "interrupted"
+
+      at <anonymous> (/home/opc/projects/haksulsomoim/.omo/evidence/task-7/independent-race-final/adversarial-interrupted-resume.test.tsx:44:69)
+(fail) renders an explicitly resumed restart-interrupted run as active [189.06ms]
+
+ 0 pass
+ 3 fail
+ 1 error
+ 6 expect() calls
+Ran 3 tests across 2 files. [684.00ms]

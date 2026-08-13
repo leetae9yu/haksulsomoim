@@ -1,0 +1,13 @@
+{
+  "scenario": "agent-live-controls-interrupted-resume",
+  "status": "FAIL",
+  "route": "Electron crash -> encrypted runtime recovery -> production preload IPC -> runtime",
+  "actions": [],
+  "cleanup": {
+    "firstCrashObserved": false,
+    "secondClosed": false,
+    "userDataRemoved": true,
+    "ocrTempArtifacts": []
+  },
+  "error": "launch: Timeout 180000ms exceeded.\nCall log:\n\u001b[2m  - <launching> /home/opc/projects/haksulsomoim/apps/desktop/node_modules/electron/dist/electron -r /home/opc/projects/haksulsomoim/apps/desktop/node_modules/playwright-core/lib/server/electron/loader.js --no-sandbox --inspect=0 --remote-debugging-port=0 --user-data-dir=/tmp/haksulsomoim-interrupted-resume-meuWcU --qa-user-data-root=/tmp/haksulsomoim-interrupted-resume-meuWcU --qa-scenario=agent-live-controls out/main/qa.js\u001b[22m\n\u001b[2m  - <launched> pid=891775\u001b[22m\n\u001b[2m  - [pid=891775][err] Debugger listening on ws://127.0.0.1:46057/ca93f9ba-52cb-4d92-90ae-45618808b2ee\u001b[22m\n\u001b[2m  - [pid=891775][err] For help, see: https://nodejs.org/learn/getting-started/debugging\u001b[22m\n\u001b[2m  - <ws connecting> ws://127.0.0.1:46057/ca93f9ba-52cb-4d92-90ae-45618808b2ee\u001b[22m\n\u001b[2m  - [pid=891775][err] Debugger attached.\u001b[22m\n\u001b[2m  - [pid=891775][err]\u001b[22m\n\u001b[2m  - [pid=891775][err] DevTools listening on ws://127.0.0.1:36725/devtools/browser/39408f56-308d-4573-8e7f-00893084b5a5\u001b[22m\n\u001b[2m  - [pid=891775][err] [891802:0813/175958.723296:ERROR:media/gpu/vaapi/vaapi_wrapper.cc:1796] vaInitialize failed: unknown libva error\u001b[22m\n"
+}

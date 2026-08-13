@@ -1,0 +1,10 @@
+bun test v1.3.14 (0d9b296a)
+
+../../.omo/evidence/task-7/independent-race-final/adversarial-interrupted-resume.test.tsx:
+(pass) accepts a higher-revision active projection when explicitly resuming a restart interruption [0.30ms]
+(pass) renders an explicitly resumed restart-interrupted run as active [237.70ms]
+
+ 2 pass
+ 0 fail
+ 6 expect() calls
+Ran 2 tests across 1 file. [1074.00ms]

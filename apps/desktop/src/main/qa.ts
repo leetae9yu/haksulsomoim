@@ -97,6 +97,10 @@ void bootstrapDesktop((userDataPath) =>
     loadKey: async () => createHash("sha256").update(QA_ONLY_DETERMINISTIC_MARKER).digest(),
     createLaw: createQaLaw,
     createOcr: createQaOcr,
-    createProvider: async () => createQaAgentProvider(scenario),
+    createProvider: async () =>
+      createQaAgentProvider(scenario, {
+        afterRestart: process.argv.includes("--qa-after-restart"),
+        crashRestart: process.argv.includes("--qa-crash-restart"),
+      }),
   }),
 ).catch(reportBootstrapFailure);

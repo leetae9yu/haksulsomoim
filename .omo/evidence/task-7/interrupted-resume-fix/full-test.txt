@@ -1,0 +1,447 @@
+bun test v1.3.14 (0d9b296a)
+
+scripts/package-windows.test.ts:
+(pass) Windows release packaging > uses the custom installer on Linux arm64 and every native Windows host [1.72ms]
+(pass) Windows release packaging > unpacks the complete production dependency closure for packaged subprocesses [0.24ms]
+(pass) Windows release packaging > excludes dependency test payload without removing runtime source [0.54ms]
+(pass) Windows release packaging > selects reproducibly downloaded host tools from electron-builder [0.47ms]
+(pass) Windows release packaging > requires Windows x64 native dependencies and rejects Linux payloads [0.40ms]
+(pass) Windows release packaging > installer stages and validates a complete payload before replacing an owned install [0.39ms]
+(pass) Windows release packaging > checks rollback Rename and reports restoration failure as a distinct fatal state [0.18ms]
+(pass) Windows release packaging > recovers an interrupted previous install before staging and never deletes it early [1.20ms]
+(pass) Windows release packaging > requires a zero Windows 7za exit before validating or replacing files [0.13ms]
+(pass) Windows release packaging > installer validation rejects deletion without ownership and incomplete validation [0.15ms]
+(pass) Windows release packaging > uninstall refuses foreign directories before changing shortcuts or registration [0.26ms]
+(pass) Windows release packaging > release report explicitly identifies private unsigned checksum artifacts [0.10ms]
+
+scripts/package-windows-audit.test.ts:
+(pass) Windows package payload audit > prunes the disposable stage to Windows x64 native directories [13.36ms]
+(pass) Windows package payload audit > fails staging when the required Windows fs-safe native binding is absent [1.35ms]
+(pass) Windows package payload audit > rejects foreign binary magic and unsupported PE architectures [13.87ms]
+(pass) Windows package payload audit > requires a clean Windows payload and the fs-safe runtime closure [9.68ms]
+
+scripts/qa-desktop-entry.test.ts:
+(pass) desktop QA Electron entry > builds a syntactically loadable real main entry [1004.32ms]
+
+src/main/security.test.ts:
+(pass) Electron security boundary > enables isolation and disables renderer privileges [0.09ms]
+(pass) Electron security boundary > validates the exact renderer origin for app://bundle/index.html [0.19ms]
+(pass) Electron security boundary > validates the exact renderer origin for app://bundle/assets/index.js [0.01ms]
+(pass) Electron security boundary > validates the exact renderer origin for https://bundle.evil.example/index.html
+(pass) Electron security boundary > validates the exact renderer origin for file:///tmp/index.html
+(pass) Electron security boundary > validates the exact renderer origin for app://attacker/index.html
+
+src/main/ipc-handlers.test.ts:
+(pass) desktop IPC handlers > routes the complete agent lifecycle through typed case-bound requests [21.35ms]
+(pass) desktop IPC handlers > rejects duplicate Agent list identities before returning a renderer result [2.14ms]
+(pass) desktop IPC handlers > rejects stale approvals and renderer-supplied tool execution [0.67ms]
+(pass) desktop IPC handlers > requires a case ID and strips byte arrays into the main runtime type [1.77ms]
+(pass) desktop IPC handlers > rejects renderer-supplied masked facts and unknown fields on every boundary [1.41ms]
+(pass) desktop IPC handlers > routes typed workflow and provider requests [1.29ms]
+
+src/main/runtime-case-service.test.ts:
+(pass) runtime case service > persists a dossier and associates evidence metadata with its case [1.97ms]
+(pass) runtime case service > confirms OCR through the domain and persists each typed workflow transition [2.19ms]
+(pass) runtime case service > returns official law citations and builds Codex context from redacted stored facts [3.03ms]
+(pass) runtime case service > rejects citation IDs not durably retrieved for the same case [0.59ms]
+(pass) runtime case service > serializes concurrent read-modify-save transitions for one case [0.51ms]
+
+src/main/runtime-case-repository.test.ts:
+(pass) encrypted runtime case repository > persists full intermediate workflow snapshots without plaintext dossier facts [13.98ms]
+(pass) encrypted runtime case repository > round-trips the civil workflow state pre-filing [5.49ms]
+(pass) encrypted runtime case repository > round-trips the civil workflow state payment-order-pending [3.19ms]
+(pass) encrypted runtime case repository > round-trips the civil workflow state service-attested [4.66ms]
+(pass) encrypted runtime case repository > round-trips the civil workflow state judgment-recorded [8.34ms]
+(pass) encrypted runtime case repository > round-trips the civil workflow state enforceable-title-confirmed [9.45ms]
+(pass) encrypted runtime case repository > publishes exactly one opaque final record without temporary artifacts [9.62ms]
+(pass) encrypted runtime case repository > rejects duplicate creation and removes its unpublished temporary file [17.12ms]
+
+src/main/lifecycle.test.ts:
+(pass) main-process quit lifecycle > prevents quit until disposal completes and disposes exactly once [0.60ms]
+(pass) main-process quit lifecycle > reports disposal rejection and still completes quit [0.38ms]
+
+src/main/production-security.test.ts:
+(pass) production lifecycle security regression > contains no environment-controlled key or user-data override [0.55ms]
+(pass) production lifecycle security regression > QA isolates Electron user data without environment backdoors [0.67ms]
+(pass) production lifecycle security regression > builds the deterministic entry explicitly and excludes it from packaging [0.77ms]
+
+src/main/runtime.test.ts:
+(pass) desktop runtime > keeps manual workflows available when agent initialization fails [102.59ms]
+(pass) desktop runtime > awaits every initialized integration cleanup and reports aggregate failure [22.83ms]
+
+src/main/ipc-register.test.ts:
+(pass) desktop IPC registration > rejects untrusted senders and duplicate handler registration [1.66ms]
+(pass) desktop IPC registration > cleans subscriptions and drops late or mismatched case-run events [1.73ms]
+
+src/main/ipc-production-handlers.test.ts:
+(pass) production desktop handler composition > composes the complete Agent lifecycle into the production handler surface [0.10ms]
+
+src/main/ipc-external-handlers.test.ts:
+(pass) validated desktop external controls > opens only validated official sources through the main process [1.23ms]
+(pass) validated desktop external controls > opens authentication separately and only on the exact trusted origin [0.54ms]
+
+src/main/qa-agent-provider.test.ts:
+(pass) standard desktop QA Agent provider > requires and consumes the persisted inspection digest before choosing law search [2.76ms]
+(pass) standard desktop QA Agent provider > continues from the persisted inspection after a full QA runtime restart [0.27ms]
+(pass) standard desktop QA Agent provider > writes a cited local draft from the completed law observation before finishing [0.99ms]
+
+src/main/runtime-agent-live.integration.test.ts:
+(pass) production initial Agent lifecycle > returns, broadcasts, pauses, resumes, and cancels the durable initial run [381.88ms]
+
+src/main/runtime-agent-artifact.integration.test.ts:
+(pass) production encrypted Agent artifacts > writes and opens a cited draft through a bounded app-owned projection [479.28ms]
+
+src/main/runtime-agent-production.integration.test.ts:
+(pass) production Agent handler runtime > routes a real Agent run through the production handler surface [334.53ms]
+
+src/main/runtime-agent-artifact-boundary.integration.test.ts:
+(pass) production Agent artifact authority boundary > rejects citation laundering from an unrelated completed observation [301.86ms]
+(pass) production Agent artifact authority boundary > rejects pre-mutation consent after a successful authoritative mutation [524.48ms]
+
+src/preload/index.test.ts:
+(pass) desktop preload bridge > opens only the strict masked-case digest projection [1.90ms]
+(pass) desktop preload bridge > opens only a bounded app-owned Agent artifact projection [0.85ms]
+(pass) desktop preload bridge > exposes narrow lifecycle invokes without exposing raw ipcRenderer [0.71ms]
+(pass) desktop preload bridge > subscribes with cleanup and ignores late or mismatched events [0.41ms]
+
+src/ocr/local-ocr.test.ts:
+(pass) TesseractJsLocalOcrAdapter > returns only unconfirmed readable candidates with confidence and bounding boxes [0.76ms]
+(pass) TesseractJsLocalOcrAdapter > returns a typed unreadable result for empty bytes without invoking OCR [0.36ms]
+(pass) TesseractJsLocalOcrAdapter > does not invent facts when OCR yields blank or invalid candidates [0.32ms]
+(pass) TesseractJsLocalOcrAdapter > turns recognition failure into an unreadable result without guessed candidates [0.36ms]
+(pass) TesseractJsLocalOcrAdapter > queues recognition jobs and explicitly terminates after pending work [0.73ms]
+
+src/domain/case-workflow.test.ts:
+(pass) separate criminal and civil tracks > progresses the criminal complaint without advancing the civil track [0.26ms]
+(pass) separate criminal and civil tracks > progresses civil service, judgment, and finality without advancing criminal complaint [0.14ms]
+(pass) enforceable title attestations > requires user-attested service and does not permit skipping to judgment [0.10ms]
+(pass) enforceable title attestations > requires user-attested finality after judgment before enforcement [0.13ms]
+(pass) case intake boundary > accepts an in-scope case with pending OCR facts [0.09ms]
+(pass) case intake boundary > accepts integer KRW boundary amount: 1 [0.04ms]
+(pass) case intake boundary > accepts integer KRW boundary amount: 30000000
+(pass) case intake boundary > rejects unsupported KRW amount: %s [0.09ms]
+(pass) case intake boundary > rejects unsupported KRW amount: %s
+(pass) case intake boundary > rejects unsupported KRW amount: %s
+(pass) case intake boundary > returns neutral data for an out-of-scope case: {"jurisdiction":"international"} [0.05ms]
+(pass) case intake boundary > returns neutral data for an out-of-scope case: {"paymentMethod":"card"}
+
+src/security/redaction.test.ts:
+(pass) Redactor > removes every direct identifier from outbound text [1.91ms]
+(pass) Redactor > redacts email and person-name fields at the explicit structured-data boundary [0.37ms]
+(pass) Redactor > masks direct identifiers embedded in adversarial OCR, filenames, URLs, and paths [0.47ms]
+(pass) Redactor > masks email addresses without relying on optional structured metadata [0.16ms]
+(pass) Redactor > uses stable tokens within one case and unlinkable tokens across cases [0.88ms]
+(pass) Redactor > diagnostics are constructed only from branded redacted fields [0.37ms]
+
+src/storage/local-case-store.test.ts:
+(pass) LocalCaseStore > round-trips immutable original bytes under an opaque id [10.79ms]
+(pass) LocalCaseStore > encrypts with AES-256-GCM, fresh nonces, and authenticated metadata [19.01ms]
+(pass) LocalCaseStore > never overwrites an existing evidence object [8.18ms]
+(pass) LocalCaseStore > rejects malformed records with a typed error [1.67ms]
+(pass) LocalCaseStore > rejects authenticated ciphertext corruption with a typed error [7.36ms]
+
+src/storage/case-dossier.test.ts:
+(pass) persistent case dossiers > survives a new store instance with evidence membership and workflow snapshot [20.61ms]
+(pass) persistent case dossiers > keeps case IDs, filenames, OCR values, and evidence plaintext out of disk metadata [15.49ms]
+(pass) persistent case dossiers > round-trips the civil workflow state pre-filing [4.46ms]
+(pass) persistent case dossiers > round-trips the civil workflow state payment-order-pending [12.66ms]
+(pass) persistent case dossiers > round-trips the civil workflow state service-attested [9.64ms]
+(pass) persistent case dossiers > round-trips the civil workflow state judgment-recorded [4.98ms]
+(pass) persistent case dossiers > round-trips the civil workflow state enforceable-title-confirmed [10.02ms]
+(pass) persistent case dossiers > rejects malformed and authenticated metadata tampering [7.69ms]
+(pass) persistent case dossiers > cannot attach evidence to an unknown case [17.46ms]
+
+src/contracts/desktop-api.test.ts:
+(pass) desktop IPC contracts > accepts only the supported intake boundary [0.58ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://law.go.kr/법령 [0.17ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://scourt.go.kr/portal/main.jsp [0.02ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://ecrm.police.go.kr/minwon/main [0.01ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: http://law.go.kr/법령 [0.16ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://www.law.go.kr/법령 [0.02ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://law.go.kr.evil.example/ [0.05ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: https://scourt.go.kr:444/ [0.04ms]
+(pass) desktop IPC contracts > allows only an explicit official HTTPS origin: not a URL [0.17ms]
+(pass) desktop IPC contracts > allows only the exact trusted authentication origin: https://auth.openai.com/oauth/authorize?state=opaque [0.08ms]
+(pass) desktop IPC contracts > allows only the exact trusted authentication origin: http://auth.openai.com/oauth/authorize [0.06ms]
+(pass) desktop IPC contracts > allows only the exact trusted authentication origin: https://www.auth.openai.com/oauth/authorize [0.04ms]
+(pass) desktop IPC contracts > allows only the exact trusted authentication origin: https://auth.openai.com.evil.example/oauth/authorize [0.04ms]
+(pass) desktop IPC contracts > allows only the exact trusted authentication origin: https://auth.openai.com:444/oauth/authorize [0.03ms]
+(pass) desktop IPC contracts > accepts only matching Agent case goals and current approval digests [2.19ms]
+(pass) desktop IPC contracts > returns only a strict case-bound masked context digest [0.19ms]
+(pass) desktop IPC contracts > bounds app-owned Agent artifact opening without paths or provider payloads [0.34ms]
+(pass) desktop IPC contracts > closes Agent lifecycle inputs and bounds renderer user input [0.47ms]
+(pass) desktop IPC contracts > rejects only duplicate Agent case-run identity pairs [0.47ms]
+(pass) desktop IPC contracts > requires case association and rejects empty evidence bytes or unknown fields [0.54ms]
+
+src/main/agent/agent-contracts.test.ts:
+(pass) Agent domain contracts > round-trips a valid bounded run [0.51ms]
+(pass) Agent domain contracts > rejects unknown tools and stale approval digests [5.79ms]
+(pass) Agent domain contracts > rejects malformed steps and negative or exhausted active budgets [0.89ms]
+(pass) Agent domain contracts > allows only one active run per case [0.76ms]
+(pass) Agent domain contracts > keeps civil and criminal objectives distinct while user text remains inert data [0.48ms]
+
+src/main/agent/agent-run-repository.test.ts:
+(pass) encrypted Agent run repository > round-trips an encrypted ordered run without plaintext facts decisions or errors [61.63ms]
+(pass) encrypted Agent run repository > resumes from the last committed observation without duplicate execution [91.50ms]
+(pass) encrypted Agent run repository > converts an ambiguous in-flight step to typed interrupted on restart [79.86ms]
+(pass) encrypted Agent run repository > publishes atomically and rejects duplicate runs while cleaning temporary files [35.50ms]
+(pass) encrypted Agent run repository > rejects plaintext, corrupt records, and duplicate publication [45.13ms]
+(pass) encrypted Agent run repository > rejects a tool result whose tool name differs from its committed start [35.73ms]
+(pass) encrypted Agent run repository > requires result persistence before cursor advance and preserves immutable history [49.01ms]
+
+src/main/agent/agent-run-repository-ownership.test.ts:
+(pass) Agent run repository same-process ownership > prevents one repository instance from committing conflicting saves [45.09ms]
+(pass) Agent run repository same-process ownership > prevents two repository instances in one process from both committing [63.95ms]
+
+src/main/agent/agent-loop-service.test.ts:
+(pass) host-owned bounded Agent loop > uses a persisted observation to choose and execute the next safe tool [6.33ms]
+(pass) host-owned bounded Agent loop > never executes consequential or stale-approved actions [5.95ms]
+
+src/main/agent/agent-loop-service-limits.test.ts:
+(pass) Agent loop limits and ownership > stops at twelve decisions and never reexecutes an exact duplicate result [17.04ms]
+(pass) Agent loop limits and ownership > stops after exactly eight safe tool executions [16.50ms]
+(pass) Agent loop limits and ownership > charges provider time against the exact five minute budget [1.42ms]
+(pass) Agent loop limits and ownership > allows one active run per case and cancellation interrupts after persistence [1.64ms]
+
+src/main/agent/agent-loop-service-boundaries.test.ts:
+(pass) Agent loop context and availability boundaries > pauses before outbound work when the approved context digest changed [0.76ms]
+(pass) Agent loop context and availability boundaries > rechecks context after the provider and executes zero stale-context tools [1.29ms]
+(pass) Agent loop context and availability boundaries > pauses for unavailable provider while manual case work remains callable [0.70ms]
+(pass) Agent loop context and availability boundaries > persists an unavailable law observation and leaves manual work callable [1.83ms]
+(pass) Agent loop context and availability boundaries > rejects provider attempts to forge host-owned terminal outcomes [1.31ms]
+(pass) Agent loop context and availability boundaries > records an exact denial and keeps the consequential action pending [1.75ms]
+
+src/main/agent/agent-loop-repository.test.ts:
+(pass) Agent loop encrypted checkpoint integration > redacts a model-authored law query before decision persistence [158.67ms]
+
+src/main/agent/agent-tool-registry.test.ts:
+(pass) closed Agent tool registry > executes each local safe tool as data without workflow side effects [1.39ms]
+(pass) closed Agent tool registry > derives draft citations only from the exact causal official-law observation [0.58ms]
+(pass) closed Agent tool registry > allows law detail only for a cited result and bounds redacted observations [24.71ms]
+
+src/main/agent/agent-loop-id-rebinding.test.ts:
+(pass) host-owned Agent tool correlations > rebinds provider IDs for inspect law draft user-action and finish variants [8.07ms]
+(pass) host-owned Agent tool correlations > rejects one provider correlation reused for different sanitized calls [2.16ms]
+
+src/main/agent/agent-loop-id-rebinding-repository.test.ts:
+(pass) encrypted Agent ID rebinding > keeps provider IDs out of logical history and draft idempotency input [523.62ms]
+
+src/main/agent/agent-loop-id-rebinding-approval.test.ts:
+(pass) host-owned Agent approval correlations > rebinds phone account secret and digest approval correlations [3.59ms]
+(pass) host-owned Agent approval correlations > fails closed on malicious citation case context and digest references [7.61ms]
+
+src/main/agent/agent-loop-durable-ownership.test.ts:
+(pass) durable Agent case ownership > checkpoint failure cannot strand an active run and admit a second owner [29.08ms]
+(pass) durable Agent case ownership > retains durable and in-memory ownership when claim release fails [60.15ms]
+(pass) durable Agent case ownership > recreating the service and repository cannot bypass an active owner [128.03ms]
+(pass) durable Agent case ownership > different cases acquire owners and run concurrently [86.00ms]
+
+src/main/agent/agent-run-repository-case-claim.test.ts:
+(pass) encrypted Agent case claim > stores an opaque encrypted owner and releases only after interrupted persistence [58.15ms]
+(pass) encrypted Agent case claim > fails closed on a tampered claim [23.47ms]
+(pass) encrypted Agent case claim > rejects a wrong key before alternate owner lookup or publication [26.09ms]
+(pass) encrypted Agent case claim > allows exactly one multi-instance owner for the same case [19.62ms]
+(pass) encrypted Agent case claim > cleans an orphaned acquired claim during explicit recovery [23.45ms]
+(pass) encrypted Agent case claim > rolls back a newly acquired claim when run publication fails [43.77ms]
+
+src/main/agent/agent-run-repository-key-marker.test.ts:
+(pass) Agent repository key marker > creates one fixed private authenticated marker file [8.87ms]
+(pass) Agent repository key marker > allows exactly one key to initialize a same-process first-open race [10.14ms]
+(pass) Agent repository key marker > rejects a wrong key without changing the marker [7.40ms]
+(pass) Agent repository key marker > rejects a crash-partial marker without changing it [11.17ms]
+(pass) Agent repository key marker > rejects a malformed marker without changing it [9.03ms]
+(pass) Agent repository key marker > rejects a tampered marker without changing it [10.93ms]
+(pass) Agent repository key marker > fails closed on the unreleased marker-directory layout [2.78ms]
+(pass) Agent repository key marker > does not initialize a markerless legacy repository [12.48ms]
+
+src/main/agent/agent-run-repository-key-artifacts.test.ts:
+(pass) Agent repository key marker attacker artifacts > rejects an exact marker file without mutation [6.32ms]
+(pass) Agent repository key marker attacker artifacts > rejects an exact marker hardlink without mutation [3.80ms]
+(pass) Agent repository key marker attacker artifacts > rejects an exact marker symlink without mutation [3.91ms]
+(pass) Agent repository key marker attacker artifacts > rejects an exact marker directory without mutation [3.75ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing stale prefix artifact without mutation [7.12ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing malformed prefix artifact without mutation [4.60ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing symlink prefix artifact without mutation [3.33ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing directory prefix artifact without mutation [5.64ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing hardlink prefix artifact without mutation [4.12ms]
+(pass) Agent repository key marker attacker artifacts > rejects a pre-existing attacker-format prefix artifact without mutation [3.36ms]
+(pass) Agent repository key marker attacker artifacts > creates no publication temp and preserves sibling artifacts [23.03ms]
+
+src/main/agent/agent-run-repository-key-canonical.test.ts:
+{"status":"CROSS_DEVICE","sourceDevice":64512,"targetDevice":26}
+(pass) Agent repository canonical key-marker paths > publishes first marker through a cross-device canonical symlink [7.66ms]
+(pass) Agent repository canonical key-marker paths > serializes canonical and symlink first opens to one marker [7.97ms]
+(pass) Agent repository canonical key-marker paths > rejects a symlink target swap after pinning the canonical directory [6.70ms]
+(pass) Agent repository canonical key-marker paths > rejects canonical directory inode substitution after pinning [7.66ms]
+(pass) Agent repository canonical key-marker paths > does not follow a fixed marker symlink inside the repository [12.81ms]
+
+src/main/agent/agent-run-repository-key-noreplace.test.ts:
+(pass) Agent repository marker exclusive file capture > preserves destination insertion across 64 deterministic rounds [122.13ms]
+(pass) Agent repository marker exclusive file capture > preserves a colliding marker file [2.01ms]
+(pass) Agent repository marker exclusive file capture > preserves a colliding marker hardlink [1.53ms]
+(pass) Agent repository marker exclusive file capture > preserves a colliding marker symlink [1.49ms]
+(pass) Agent repository marker exclusive file capture > preserves a colliding marker directory [1.40ms]
+(pass) Agent repository marker exclusive file capture > leaves a completed marker unchanged when publication is contended [15.16ms]
+
+src/main/agent/agent-run-repository-key-source-proof.test.ts:
+(pass) Agent repository marker handle-relative identity proof > preserves a file replacement after atomic marker creation [8.38ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a file replacement after marker fsync [6.00ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a hardlink replacement after atomic marker creation [3.93ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a hardlink replacement after marker fsync [7.67ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a symlink replacement after atomic marker creation [6.52ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a symlink replacement after marker fsync [4.24ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a directory replacement after atomic marker creation [4.77ms]
+(pass) Agent repository marker handle-relative identity proof > preserves a directory replacement after marker fsync [6.71ms]
+
+src/main/agent/agent-run-repository-key-atomic.test.ts:
+(pass) Agent repository atomic marker file > keeps the atomically returned file descriptor bound after pathname replacement [15.35ms]
+
+src/main/agent/agent-run-repository-key-process-race.test.ts:
+(pass) Agent repository marker process races > coordinates a same-key first-open race without observing partial publication [164.80ms]
+(pass) Agent repository marker process races > allows exactly one key across a different-key first-open race [182.49ms]
+
+src/main/agent/agent-run-repository-key-publication.test.ts:
+(pass) Agent repository key marker source lifecycle > keeps creation beneath the pinned parent descriptor after a parent swap [5.52ms]
+(pass) Agent repository key marker source lifecycle > fails closed on a post-write pathname replacement [7.86ms]
+(pass) Agent repository key marker source lifecycle > fences the fixed marker pathname across 64 deterministic rounds [321.09ms]
+(pass) Agent repository key marker source lifecycle > leaves only the fixed marker after normal publication [15.44ms]
+
+src/main/agent/agent-run-repository-key-publication-adversarial.test.ts:
+(pass) Agent repository marker adversarial capture > preserves a pre-capture marker file [2.42ms]
+(pass) Agent repository marker adversarial capture > preserves a pre-capture marker hardlink [2.57ms]
+(pass) Agent repository marker adversarial capture > preserves a pre-capture marker symlink [2.69ms]
+(pass) Agent repository marker adversarial capture > preserves a pre-capture marker directory [1.47ms]
+(pass) Agent repository marker adversarial capture > rejects a non-portable verifier "AA" [0.55ms]
+(pass) Agent repository marker adversarial capture > rejects a non-portable verifier "aa" [0.28ms]
+(pass) Agent repository marker adversarial capture > rejects a non-portable verifier "a/" [0.27ms]
+(pass) Agent repository marker adversarial capture > rejects a non-portable verifier "a:" [0.27ms]
+(pass) Agent repository marker adversarial capture > rejects a non-portable verifier "한한" [0.31ms]
+(pass) Agent repository marker adversarial capture > serializes one fixed Windows-safe versioned marker [0.09ms]
+
+src/main/agent/agent-runtime.integration.test.ts:
+(pass) desktop Agent runtime integration > resumes an interrupted run after recreating the desktop runtime [228.31ms]
+(pass) desktop Agent runtime integration > reports MCP initialization failure without starting or replaying a run [14.02ms]
+
+src/main/agent/agent-runtime-disposal.integration.test.ts:
+(pass) Agent runtime initialization ownership > waits for deferred initialization before disposal and rejects late starts [16.25ms]
+(pass) Agent runtime initialization ownership > settles rejected initialization before one idempotent teardown [17.82ms]
+
+src/main/agent/agent-privacy-boundaries.test.ts:
+(pass) Agent privacy boundaries > keeps raw filenames local and masks adversarial confirmed OCR in model context [1.11ms]
+
+src/main/agent/agent-ipc-mapper.test.ts:
+(pass) bounded Agent renderer projection > maps ordered step summaries and linked official citations without raw inputs or IDs [2.28ms]
+(pass) bounded Agent renderer projection > projects an opaque causal edge without exposing observation digests [1.56ms]
+(pass) bounded Agent renderer projection > rejects unlinked, unsafe, duplicate, or raw citation projections [2.52ms]
+(pass) bounded Agent renderer projection > keeps the renderer projection closed against tool inputs and provider metadata [1.05ms]
+
+src/renderer/src/App.test.tsx:
+(pass) domain-backed desktop case workflow > passes explicit case IDs and confirms OCR before rendering separate tracks [359.85ms]
+(pass) domain-backed desktop case workflow > advances criminal and civil attestations before exposing enforcement [413.53ms]
+(pass) domain-backed desktop case workflow > rejects amounts over thirty million won before IPC [89.36ms]
+
+src/renderer/src/App.resilience.test.tsx:
+(pass) renderer recovery boundaries > disables file selection during OCR and ignores a stale prior-case response [119.61ms]
+(pass) renderer recovery boundaries > preserves the active workspace while replacement is pending, then resets on acceptance [215.47ms]
+(pass) renderer recovery boundaries > keeps the active case usable after rejected and failed replacement intake [284.77ms]
+(pass) renderer recovery boundaries > ignores a stale replacement response after a newer case is accepted [48.00ms]
+(pass) renderer recovery boundaries > rejects strict MIME violations and bounds recoverable OCR failures in Korean [128.66ms]
+(pass) renderer recovery boundaries > keeps unreadable evidence behind domain confirmation [280.86ms]
+
+src/renderer/src/App.integrations.test.tsx:
+(pass) official guidance and autonomous Agent workspace > renders checkable official citations and opens them through the trusted bridge [181.09ms]
+(pass) official guidance and autonomous Agent workspace > replaces the optional suggestion with the current masked-case digest [237.83ms]
+(pass) official guidance and autonomous Agent workspace > revokes an opened artifact after a successful material workflow mutation [305.94ms]
+(pass) official guidance and autonomous Agent workspace > uses only the trusted external authentication control [212.34ms]
+(pass) official guidance and autonomous Agent workspace > falls back to typed manual mode without leaking provider errors [165.79ms]
+
+src/renderer/src/AgentWorkspace.test.tsx:
+(pass) Korean Agent workspace > requires consent, starts a civil goal, and renders real ordered tools with linked citations [95.24ms]
+(pass) Korean Agent workspace > requires re-consent when the masked context changes immediately before start [54.16ms]
+(pass) Korean Agent workspace > keeps criminal goals separate and supports native keyboard operation [52.30ms]
+(pass) Korean Agent workspace > denies and approves only the current pending consequential action [158.29ms]
+(pass) Korean Agent workspace > routes pause, explicit resume, and cancellation without executing tools [128.92ms]
+(pass) Korean Agent workspace > ignores a stale completed response after the active case changes [79.70ms]
+(pass) Korean Agent workspace > announces a sanitized provider-manual state and keeps local goals visible [7.36ms]
+
+src/renderer/src/AgentWorkspace.live.test.tsx:
+(pass) live Agent workspace projection > keeps the terminal timeline when a stale active event arrives for the same run [73.26ms]
+(pass) live Agent workspace projection > rejects a late active resume response after a terminal subscription event [96.66ms]
+
+src/renderer/src/use-agent-artifact.test.tsx:
+(pass) binds an artifact response to its captured digest and projection revision [11.38ms]
+(pass) clears sensitive content before open and announces a stale rejection [107.88ms]
+(pass) accepts only the latest matching artifact request and identity [15.64ms]
+
+src/renderer/src/agent-workspace-projection.test.ts:
+(pass) Agent projection causal reducer > keeps terminal outcome completed monotonic against a higher paused revision [0.83ms]
+(pass) Agent projection causal reducer > keeps terminal outcome budget-exhausted monotonic against a higher paused revision [0.47ms]
+(pass) Agent projection causal reducer > keeps terminal outcome failed-policy monotonic against a higher paused revision [0.44ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [0.82ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [0.71ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [0.88ms]
+(pass) Agent projection causal reducer > accepts only a strict higher-revision explicit restart resume [0.97ms]
+(pass) Agent projection causal reducer > keeps non-resumable interruption provider-timeout monotonic [0.63ms]
+(pass) Agent projection causal reducer > keeps non-resumable interruption user-cancelled monotonic [0.43ms]
+(pass) Agent projection causal reducer > rejects unsolicited revival and wrong run, case, or step history [0.75ms]
+(pass) Agent projection causal reducer > rejects foreign case and run events while allowing an explicitly reset restart [0.86ms]
+
+src/renderer/src/AgentWorkspace.interrupted-resume.test.tsx:
+(pass) restart-interrupted Agent workspace > accepts a correlated explicit resume response exactly once [85.01ms]
+(pass) restart-interrupted Agent workspace > does not revive from an unsolicited active or paused event [49.19ms]
+(pass) restart-interrupted Agent workspace > rejects a late resume response after cancellation [58.84ms]
+(pass) restart-interrupted Agent workspace > rejects a late resume response after the case changes [59.00ms]
+
+src/integrations/korean-law-mcp/korean-law-mcp.test.ts:
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC=undefined [0.69ms]
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC="" [0.04ms]
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC="   " [0.02ms]
+(pass) Korean law MCP adapter > injects LAW_OC only into the child environment and never args or logs [1.49ms]
+(pass) Korean law MCP adapter > returns an opaque error without raw provider IDs, secrets, paths, or URLs [0.51ms]
+(pass) Korean law MCP adapter > exposes exactly the five approved tools and rejects arbitrary discovery or execution [0.72ms]
+
+src/integrations/korean-law-mcp/citation-parser.test.ts:
+(pass) Korean law citation parsing > preserves provenance and derives a stable citation identity [0.74ms]
+(pass) Korean law citation parsing > accepts citations only from exact official Korean-law origins [0.25ms]
+(pass) Korean law citation parsing > rejects malicious official-looking URLs and unsafe provenance metadata [0.17ms]
+(pass) Korean law citation parsing > collapses repeated provenance to one canonical identity [0.15ms]
+(pass) Korean law citation parsing > derives an official citation from a text-only law response [0.46ms]
+
+src/integrations/agent-provider/agent-provider.test.ts:
+(pass) Codex agent provider > falls back to typed manual mode when the official Codex binary is unavailable [0.60ms]
+(pass) Codex agent provider > closes app-server when provider initialization fails [0.89ms]
+(pass) Codex agent provider > initializes app-server and exposes the exact sign-in-required action with no account [0.50ms]
+(pass) Codex agent provider > delegates ChatGPT login to app-server and returns only an official OpenAI auth URL [0.54ms]
+(pass) Codex agent provider > refreshes to authenticated state on official login completion and account updates [0.57ms]
+(pass) Codex agent provider > sends only user-approved masked facts/citation IDs and returns immutable suggestions [1.83ms]
+
+src/integrations/agent-provider/codex-app-server-launcher.test.ts:
+(pass) Codex app-server launcher > returns typed unavailable state when the official binary cannot start [0.71ms]
+(pass) Codex app-server launcher > resolves the packaged executable and launches with an allowlisted environment [0.51ms]
+(pass) Codex app-server launcher > handles rejected async notification listeners without an unhandled rejection [0.66ms]
+(pass) Codex app-server launcher > awaits child close before connection disposal resolves [0.54ms]
+(pass) Codex app-server launcher > correlates JSONL responses, sanitizes server errors, and forwards notifications [0.81ms]
+
+src/integrations/agent-provider/agent-provider-decisions.test.ts:
+(pass) structured Codex agent decisions > returns one typed next decision from approved masked context [10.26ms]
+(pass) structured Codex agent decisions > interrupts a timed-out turn and ignores late completion [1.88ms]
+(pass) structured Codex agent decisions > rejects malformed decisions and non-completed turns [3.68ms]
+(pass) structured Codex agent decisions > disposal rejects active work without exposing provider details [0.96ms]
+
+src/integrations/agent-provider/agent-decision-correlation.test.ts:
+(pass) Codex decision notification correlation > rejects item completion without matching thread and turn identifiers [3.44ms]
+
+src/integrations/agent-provider/agent-provider-privacy.test.ts:
+(pass) Codex provider privacy boundary > uses the provider-supported closed decision schema [0.15ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "900101-1234567" before creating an outbound thread [0.62ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "010-1234-5678" before creating an outbound thread [0.13ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "서울특별시 종로구 세종대로 209" before creating an outbound thread [0.07ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "110-123-456789" before creating an outbound thread [0.29ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "2024가단123456" before creating an outbound thread [0.08ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "claimant@example.com" before creating an outbound thread [0.05ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "sender: 홍길동" before creating an outbound thread [0.08ms]
+
+ 308 pass
+ 0 fail
+ 1526 expect() calls
+Ran 308 tests across 66 files. [12.08s]

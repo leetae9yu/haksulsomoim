@@ -3,7 +3,7 @@ import type { AgentRunProjection } from "../../contracts/desktop-api";
 import { useAgentProvider } from "./AgentProviderStatus";
 import { AgentWorkspaceView } from "./AgentWorkspaceView";
 import { agentGoal } from "./agent-workspace-goal";
-import { acceptAgentProjection } from "./agent-workspace-projection";
+import { acceptAgentProjection, acceptAgentProjectionEvent } from "./agent-workspace-projection";
 import { type AgentProviderState, agentUiStatus } from "./agent-workspace-state";
 import { useAgentArtifact } from "./use-agent-artifact";
 
@@ -71,14 +71,17 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     }
     return window.haksul.subscribeAgentRun({ caseId, runId, contextDigest }, (event) => {
       if (caseRef.current !== caseId || event.caseId !== caseId || event.runId !== runId) return;
-      setProjection((current) => acceptAgentProjection(current, event.projection));
+      setProjection((current) => acceptAgentProjectionEvent(current, event.projection));
     });
   }, [caseId, contextDigest, runId]);
   const approvalId = projection?.pendingApproval?.approvalId;
   useEffect(() => {
     if (approvalId !== undefined) approvalRef.current?.focus();
   }, [approvalId]);
-  async function commit(operation: () => Promise<AgentRunProjection>) {
+  async function commit(
+    operation: () => Promise<AgentRunProjection>,
+    accept = acceptAgentProjectionEvent,
+  ) {
     const requestId = ++requestRef.current;
     const requestCase = caseId;
     setBusy(true);
@@ -86,7 +89,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     try {
       const result = await operation();
       if (requestId === requestRef.current && caseRef.current === requestCase) {
-        setProjection((current) => acceptAgentProjection(current, result));
+        setProjection((current) => accept(current, result));
       }
     } catch {
       if (requestId === requestRef.current && caseRef.current === requestCase) {
@@ -184,7 +187,10 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     const command = window.haksul.resumeAgentRun;
     if (request === undefined || command === undefined) return;
     const userInput = inputValue.trim();
-    void commit(() => command({ ...request, ...(userInput.length > 0 ? { userInput } : {}) }));
+    void commit(
+      () => command({ ...request, ...(userInput.length > 0 ? { userInput } : {}) }),
+      acceptAgentProjection,
+    );
   }
 
   function cancel() {

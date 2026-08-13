@@ -1,0 +1,113 @@
+bun test v1.3.14 (0d9b296a)
+
+src/renderer/src/App.test.tsx:
+(pass) domain-backed desktop case workflow > passes explicit case IDs and confirms OCR before rendering separate tracks [339.85ms]
+(pass) domain-backed desktop case workflow > advances criminal and civil attestations before exposing enforcement [378.38ms]
+(pass) domain-backed desktop case workflow > rejects amounts over thirty million won before IPC [81.71ms]
+
+src/renderer/src/App.resilience.test.tsx:
+(pass) renderer recovery boundaries > disables file selection during OCR and ignores a stale prior-case response [130.50ms]
+(pass) renderer recovery boundaries > preserves the active workspace while replacement is pending, then resets on acceptance [201.24ms]
+(pass) renderer recovery boundaries > keeps the active case usable after rejected and failed replacement intake [217.34ms]
+(pass) renderer recovery boundaries > ignores a stale replacement response after a newer case is accepted [18.33ms]
+(pass) renderer recovery boundaries > rejects strict MIME violations and bounds recoverable OCR failures in Korean [101.17ms]
+(pass) renderer recovery boundaries > keeps unreadable evidence behind domain confirmation [194.60ms]
+
+src/renderer/src/App.integrations.test.tsx:
+(pass) official guidance and autonomous Agent workspace > renders checkable official citations and opens them through the trusted bridge [146.40ms]
+(pass) official guidance and autonomous Agent workspace > replaces the optional suggestion with the current masked-case digest [212.23ms]
+(pass) official guidance and autonomous Agent workspace > revokes an opened artifact after a successful material workflow mutation [252.22ms]
+(pass) official guidance and autonomous Agent workspace > uses only the trusted external authentication control [172.59ms]
+(pass) official guidance and autonomous Agent workspace > falls back to typed manual mode without leaking provider errors [132.49ms]
+
+src/renderer/src/AgentWorkspace.test.tsx:
+(pass) Korean Agent workspace > requires consent, starts a civil goal, and renders real ordered tools with linked citations [104.00ms]
+(pass) Korean Agent workspace > requires re-consent when the masked context changes immediately before start [56.74ms]
+(pass) Korean Agent workspace > keeps criminal goals separate and supports native keyboard operation [57.34ms]
+(pass) Korean Agent workspace > denies and approves only the current pending consequential action [184.58ms]
+(pass) Korean Agent workspace > routes pause, explicit resume, and cancellation without executing tools [134.54ms]
+(pass) Korean Agent workspace > ignores a stale completed response after the active case changes [66.46ms]
+(pass) Korean Agent workspace > announces a sanitized provider-manual state and keeps local goals visible [13.27ms]
+
+src/renderer/src/AgentWorkspace.live.test.tsx:
+(pass) live Agent workspace projection > keeps the terminal timeline when a stale active event arrives for the same run [80.86ms]
+(pass) live Agent workspace projection > rejects a late active resume response after a terminal subscription event [89.38ms]
+
+src/renderer/src/use-agent-artifact.test.tsx:
+(pass) binds an artifact response to its captured digest and projection revision [10.63ms]
+(pass) clears sensitive content before open and announces a stale rejection [62.05ms]
+(pass) accepts only the latest matching artifact request and identity [4.62ms]
+
+src/renderer/src/agent-workspace-projection.test.ts:
+(pass) Agent projection causal reducer > keeps terminal outcome completed monotonic against a higher paused revision [1.05ms]
+(pass) Agent projection causal reducer > keeps terminal outcome budget-exhausted monotonic against a higher paused revision [1.23ms]
+(pass) Agent projection causal reducer > keeps terminal outcome failed-policy monotonic against a higher paused revision [0.90ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [1.08ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [1.19ms]
+(pass) Agent projection causal reducer > keeps completed, cancelled, and failed runs monotonic [1.01ms]
+(pass) Agent projection causal reducer > accepts only a strict higher-revision explicit restart resume [1.50ms]
+(pass) Agent projection causal reducer > keeps non-resumable interruption provider-timeout monotonic [0.90ms]
+(pass) Agent projection causal reducer > keeps non-resumable interruption user-cancelled monotonic [0.76ms]
+(pass) Agent projection causal reducer > rejects unsolicited revival and wrong run, case, or step history [1.16ms]
+(pass) Agent projection causal reducer > rejects foreign case and run events while allowing an explicitly reset restart [1.25ms]
+
+src/renderer/src/AgentWorkspace.interrupted-resume.test.tsx:
+(pass) restart-interrupted Agent workspace > accepts a correlated explicit resume response exactly once [72.74ms]
+(pass) restart-interrupted Agent workspace > does not revive from an unsolicited active or paused event [38.22ms]
+(pass) restart-interrupted Agent workspace > rejects a late resume response after cancellation [59.71ms]
+(pass) restart-interrupted Agent workspace > rejects a late resume response after the case changes [65.20ms]
+
+src/main/runtime.test.ts:
+(pass) desktop runtime > keeps manual workflows available when agent initialization fails [80.38ms]
+(pass) desktop runtime > awaits every initialized integration cleanup and reports aggregate failure [17.99ms]
+
+src/main/runtime-agent-artifact-boundary.integration.test.ts:
+(pass) production Agent artifact authority boundary > rejects citation laundering from an unrelated completed observation [415.59ms]
+(pass) production Agent artifact authority boundary > rejects pre-mutation consent after a successful authoritative mutation [523.32ms]
+
+src/main/runtime-agent-artifact.integration.test.ts:
+(pass) production encrypted Agent artifacts > writes and opens a cited draft through a bounded app-owned projection [447.76ms]
+
+src/main/runtime-agent-live.integration.test.ts:
+(pass) production initial Agent lifecycle > returns, broadcasts, pauses, resumes, and cancels the durable initial run [254.15ms]
+
+src/main/runtime-agent-production.integration.test.ts:
+(pass) production Agent handler runtime > routes a real Agent run through the production handler surface [247.35ms]
+
+src/main/agent/agent-runtime.integration.test.ts:
+(pass) desktop Agent runtime integration > resumes an interrupted run after recreating the desktop runtime [219.46ms]
+(pass) desktop Agent runtime integration > reports MCP initialization failure without starting or replaying a run [14.88ms]
+
+src/main/agent/agent-runtime-disposal.integration.test.ts:
+(pass) Agent runtime initialization ownership > waits for deferred initialization before disposal and rejects late starts [13.53ms]
+(pass) Agent runtime initialization ownership > settles rejected initialization before one idempotent teardown [14.11ms]
+
+src/main/ipc-handlers.test.ts:
+(pass) desktop IPC handlers > routes the complete agent lifecycle through typed case-bound requests [4.30ms]
+(pass) desktop IPC handlers > rejects duplicate Agent list identities before returning a renderer result [1.39ms]
+(pass) desktop IPC handlers > rejects stale approvals and renderer-supplied tool execution [0.58ms]
+(pass) desktop IPC handlers > requires a case ID and strips byte arrays into the main runtime type [1.00ms]
+(pass) desktop IPC handlers > rejects renderer-supplied masked facts and unknown fields on every boundary [0.87ms]
+(pass) desktop IPC handlers > routes typed workflow and provider requests [0.78ms]
+
+src/main/ipc-production-handlers.test.ts:
+(pass) production desktop handler composition > composes the complete Agent lifecycle into the production handler surface [0.16ms]
+
+src/main/ipc-register.test.ts:
+(pass) desktop IPC registration > rejects untrusted senders and duplicate handler registration [1.53ms]
+(pass) desktop IPC registration > cleans subscriptions and drops late or mismatched case-run events [1.77ms]
+
+src/preload/index.test.ts:
+(pass) desktop preload bridge > opens only the strict masked-case digest projection [0.72ms]
+(pass) desktop preload bridge > opens only a bounded app-owned Agent artifact projection [0.62ms]
+(pass) desktop preload bridge > exposes narrow lifecycle invokes without exposing raw ipcRenderer [0.53ms]
+(pass) desktop preload bridge > subscribes with cleanup and ignores late or mismatched events [0.30ms]
+
+../../.omo/evidence/task-7/independent-race-final/adversarial-interrupted-resume.test.tsx:
+(pass) accepts a higher-revision active projection when explicitly resuming a restart interruption [0.13ms]
+(pass) renders an explicitly resumed restart-interrupted run as active [52.17ms]
+
+ 67 pass
+ 0 fail
+ 325 expect() calls
+Ran 67 tests across 20 files. [6.72s]

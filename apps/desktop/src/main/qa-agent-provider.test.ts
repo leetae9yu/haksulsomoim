@@ -61,6 +61,21 @@ describe("standard desktop QA Agent provider", () => {
     );
   });
 
+  test("continues from the persisted inspection after a full QA runtime restart", async () => {
+    const provider = createQaAgentProvider("agent-live-controls", {
+      afterRestart: true,
+      crashRestart: true,
+    });
+    const decision = await provider.nextDecision(context([observationA]));
+    expect(decision).toMatchObject({
+      kind: "tool",
+      toolCall: {
+        toolName: "search-official-law",
+        basisObservationDigest: observationA.observationDigest,
+      },
+    });
+  });
+
   test("writes a cited local draft from the completed law observation before finishing", async () => {
     const provider = createQaAgentProvider("agent-happy");
     await provider.nextDecision(context([]));

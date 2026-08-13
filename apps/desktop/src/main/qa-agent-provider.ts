@@ -34,16 +34,24 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
     account: Object.freeze({ type: "chatgpt" as const, email: null, planType: "qa-fixture" }),
   });
   readonly #scenario: QaAgentScenario;
+  readonly #afterRestart: boolean;
+  readonly #crashRestart: boolean;
   #inspectionRequested = false;
   #inspectionDigest: string | undefined;
   #rejectDeferredTurn: ((error: Error) => void) | undefined;
 
-  constructor(scenario: QaAgentScenario) {
+  constructor(scenario: QaAgentScenario, afterRestart: boolean, crashRestart: boolean) {
     this.#scenario = scenario;
+    this.#afterRestart = afterRestart;
+    this.#crashRestart = crashRestart;
+    this.#inspectionRequested = afterRestart;
   }
 
   async nextDecision(input: ApprovedAgentDecisionContext): Promise<AgentDecision> {
-    if (this.#scenario === "agent-live-controls") {
+    if (
+      this.#scenario === "agent-live-controls" &&
+      (!this.#crashRestart || (!this.#afterRestart && input.observations.length > 0))
+    ) {
       return new Promise<never>((_resolve, reject) => {
         this.#rejectDeferredTurn = reject;
       });
@@ -136,6 +144,13 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
   }
 }
 
-export function createQaAgentProvider(scenario: QaAgentScenario): CodexAgentDecisionProvider {
-  return new QaAgentProvider(scenario);
+export function createQaAgentProvider(
+  scenario: QaAgentScenario,
+  options: Readonly<{ afterRestart?: boolean; crashRestart?: boolean }> = {},
+): CodexAgentDecisionProvider {
+  return new QaAgentProvider(
+    scenario,
+    options.afterRestart === true,
+    options.crashRestart === true,
+  );
 }

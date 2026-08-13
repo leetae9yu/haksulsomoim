@@ -1,0 +1,22 @@
+$ electron-vite build
+vite v8.2.1 building ssr environment for production...
+[2Ktransforming...✓ 69 modules transformed.
+rendering chunks...
+out/main/master-key-AKUBUq91.js    0.96 kB
+out/main/index.js                226.50 kB
+
+✓ built in 113ms
+vite v8.2.1 building ssr environment for production...
+[2Ktransforming...✓ 90 modules transformed.
+rendering chunks...
+out/preload/index.cjs  154.31 kB
+
+✓ built in 74ms
+vite v8.2.1 building client environment for production...
+[2Ktransforming...✓ 33 modules transformed.
+rendering chunks...
+out/renderer/index.html                   0.68 kB
+out/renderer/assets/index-DYQpsN43.css   29.47 kB
+out/renderer/assets/index-CSPod-sp.js   563.89 kB
+
+✓ built in 136ms
