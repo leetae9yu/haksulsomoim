@@ -32,7 +32,14 @@ describe("F4 dependency-specific package closure", () => {
     const root = mkdtempSync(join(tmpdir(), "haksul-f4-prune-"));
     try {
       const modules = join(root, "node_modules");
-      for (const name of ["@openai/codex-sdk", "@kordoc/core", "openai", "debug", "tesseract.js", "dotenv"]) {
+      for (const name of [
+        "@openai/codex-sdk",
+        "@kordoc/core",
+        "openai",
+        "debug",
+        "tesseract.js",
+        "dotenv",
+      ]) {
         fixtureManifest(modules, name, {
           main:
             name === "debug"
@@ -64,7 +71,8 @@ describe("F4 dependency-specific package closure", () => {
         "lib/main.d.ts",
         "tests/example.test.js",
         "examples/basic.js",
-      ]) write(modules, `dotenv/${path}`);
+      ])
+        write(modules, `dotenv/${path}`);
       write(modules, "tesseract.js/src/index.js", "export const ocrRuntime = true;");
       fixtureManifest(modules, "unlisted-runtime");
       write(modules, "unlisted-runtime/runtime.js.map", "runtime-owned metadata");
@@ -83,7 +91,8 @@ describe("F4 dependency-specific package closure", () => {
         "lib/main.d.ts",
         "tests",
         "examples",
-      ]) expect(existsSync(join(modules, `dotenv/${path}`))).toBe(false);
+      ])
+        expect(existsSync(join(modules, `dotenv/${path}`))).toBe(false);
       expect(existsSync(join(modules, "dotenv/lib/main.js"))).toBe(true);
       expect(existsSync(join(modules, "dotenv/config.js"))).toBe(true);
       expect(existsSync(join(modules, "@kordoc/core/dist/commands"))).toBe(false);
