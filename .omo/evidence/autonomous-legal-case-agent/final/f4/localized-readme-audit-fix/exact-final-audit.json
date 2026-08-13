@@ -1,0 +1,26 @@
+{
+  "asarEntries": 3473,
+  "audit": {
+    "fsSafeNative": [
+      "win32-x64-msvc/fs-safe-native.node"
+    ],
+    "peX64": [
+      "d3dcompiler_47.dll",
+      "dxcompiler.dll",
+      "dxil.dll",
+      "ffmpeg.dll",
+      "haksulsomoim-small-fraud-agent.exe",
+      "libEGL.dll",
+      "libGLESv2.dll",
+      "resources/app.asar.unpacked/node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node",
+      "resources/app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex-code-mode-host.exe",
+      "resources/app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+      "resources/app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-path/rg.exe",
+      "resources/app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/codex-command-runner.exe",
+      "resources/app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/codex-windows-sandbox-setup.exe",
+      "resources/app.asar.unpacked/node_modules/@openclaw/fs-safe/dist/native/win32-x64-msvc/fs-safe-native.node",
+      "vk_swiftshader.dll",
+      "vulkan-1.dll"
+    ]
+  }
+}
