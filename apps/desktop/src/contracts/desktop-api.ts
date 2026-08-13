@@ -1,4 +1,16 @@
 import { z } from "zod";
+export {
+  agentApprovalDecisionRequestSchema,
+  agentRunInterruptRequestSchema,
+  agentRunStartRequestSchema,
+} from "../main/agent/agent-contracts";
+export type {
+  ActiveAgentRun,
+  AgentApprovalDecisionRequest,
+  AgentRun,
+  AgentRunInterruptRequest,
+  AgentRunStartRequest,
+} from "../main/agent/agent-contracts";
 
 const caseId = z.string().min(1).max(255);
 const evidenceId = z.string().min(1).max(255);

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentApprovalDecisionRequestSchema,
+  agentRunStartRequestSchema,
   caseCreateRequestSchema,
   evidenceAnalyzeRequestSchema,
   officialSourceRequestSchema,
@@ -45,6 +47,47 @@ describe("desktop IPC contracts", () => {
     ["https://auth.openai.com:444/oauth/authorize", false],
   ])("allows only the exact trusted authentication origin: %s", (url, expected) => {
     expect(trustedAuthenticationRequestSchema.safeParse({ url }).success).toBe(expected);
+  });
+
+  test("accepts only matching Agent case goals and current approval digests", () => {
+    const digest = "a".repeat(64);
+    expect(
+      agentRunStartRequestSchema.safeParse({
+        caseId: "case-1",
+        goal: {
+          kind: "civil-recovery",
+          caseId: "case-1",
+          objective: "prepare-civil-demand",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      agentRunStartRequestSchema.safeParse({
+        caseId: "case-1",
+        goal: {
+          kind: "criminal-complaint",
+          caseId: "case-2",
+          objective: "prepare-criminal-complaint",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentApprovalDecisionRequestSchema.safeParse({
+        approval: {
+          approvalId: "approval-1",
+          approvalDigest: digest,
+          caseId: "case-1",
+          decisionId: "decision-1",
+          action: "review-draft",
+          contextDigest: digest,
+        },
+        decision: {
+          approvalId: "approval-1",
+          approvalDigest: "b".repeat(64),
+          outcome: "approved",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   test("requires case association and rejects empty evidence bytes or unknown fields", () => {
