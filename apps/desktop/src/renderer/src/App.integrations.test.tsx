@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type {
-  AgentRunStartIpcRequest,
-  CodexStatusResponse,
-  EmptyRequest,
-  GuidanceRequest,
-  GuidanceResponse,
+import {
+  type AgentRunStartIpcRequest,
+  agentArtifactViewSchema,
+  type CodexStatusResponse,
+  type EmptyRequest,
+  type GuidanceRequest,
+  type GuidanceResponse,
 } from "../../contracts/desktop-api";
 import { App } from "./App";
 import { completedProjection } from "./agent-workspace-test-fixtures";
@@ -95,6 +96,46 @@ describe("official guidance and autonomous Agent workspace", () => {
     });
     await waitFor(() => expect(workspace.dataset.agentStatus).toBe("completed"));
     expect(screen.queryByText("private@example.com")).toBeNull();
+  });
+
+  test("revokes an opened artifact after a successful material workflow mutation", async () => {
+    installApi({
+      codexStatus: mock(async () => ({
+        status: "authenticated" as const,
+        account: { type: "chatgpt" as const, email: null, planType: "plus" },
+      })),
+      startAgentRun: mock(async (request) => completedProjection(request.caseId, request.goal)),
+      openAgentArtifact: mock(async (request) =>
+        agentArtifactViewSchema.parse({
+          artifactId: request.artifactId,
+          artifactKind: "civil-demand",
+          title: "민감한 이전 초안",
+          sections: [{ heading: "확인 사실", text: "마스킹됨" }],
+          citationIds: ["law-1"],
+        }),
+      ),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await reachTracks(user);
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-workspace").dataset.agentProvider).toBe("authenticated"),
+    );
+    await user.click(screen.getByLabelText("민사 회수"));
+    await user.click(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-start")).toHaveProperty("disabled", false),
+    );
+    await user.click(screen.getByTestId("agent-start"));
+    await user.click(await screen.findByRole("button", { name: "암호화 초안 열기" }));
+    expect(await screen.findByRole("dialog", { name: "민감한 이전 초안" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "지급명령 신청 완료를 직접 확인" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText(/마스킹된 사건 컨텍스트 전송을 승인/)).toHaveProperty(
+      "checked",
+      false,
+    );
   });
 
   test("uses only the trusted external authentication control", async () => {

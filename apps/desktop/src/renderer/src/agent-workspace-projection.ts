@@ -6,6 +6,7 @@ export function acceptAgentProjection(
 ): AgentRunProjection {
   if (current === undefined) return candidate;
   if (current.caseId !== candidate.caseId || current.runId !== candidate.runId) return current;
+  if (current.state.kind === "terminal" || current.state.kind === "interrupted") return current;
   if (candidate.steps.length < current.steps.length) return current;
   const samePrefix = current.steps.every(
     (step, index) => candidate.steps[index]?.stepId === step.stepId,

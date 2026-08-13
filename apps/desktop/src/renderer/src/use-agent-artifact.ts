@@ -17,14 +17,29 @@ export function useAgentArtifact(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const request = useRef(0);
+  const mounted = useRef(true);
+  const authority = JSON.stringify([
+    caseId,
+    projection?.runId,
+    projection?.revision,
+    contextDigest,
+  ]);
+  const authorityRef = useRef(authority);
+  authorityRef.current = authority;
   useEffect(() => {
-    void caseId;
-    void projection?.runId;
+    void authority;
     request.current += 1;
     setView(undefined);
     setBusy(false);
     setError("");
-  }, [caseId, projection?.runId]);
+  }, [authority]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      request.current += 1;
+    };
+  }, []);
 
   return {
     busy,
@@ -32,24 +47,52 @@ export function useAgentArtifact(
     view,
     open(artifactId) {
       const command = window.haksul.openAgentArtifact;
-      if (command === undefined || projection === undefined || contextDigest === undefined) {
+      const captured = authority;
+      const runId = projection?.runId;
+      const revision = projection?.revision;
+      const requestId = ++request.current;
+      setView(undefined);
+      setError("");
+      if (
+        command === undefined ||
+        runId === undefined ||
+        revision === undefined ||
+        contextDigest === undefined
+      ) {
+        setBusy(false);
         setError("암호화 초안을 안전하게 열 수 없습니다.");
         return;
       }
-      const requestId = ++request.current;
       setBusy(true);
-      setError("");
-      void command({ caseId, runId: projection.runId, contextDigest, artifactId })
+      void command({ caseId, runId, contextDigest, artifactId })
         .then((opened) => {
-          if (request.current === requestId) setView(opened);
+          if (
+            mounted.current &&
+            request.current === requestId &&
+            authorityRef.current === captured &&
+            opened.artifactId === artifactId
+          ) {
+            setView(opened);
+          }
         })
         .catch(() => {
-          if (request.current === requestId) {
+          if (
+            mounted.current &&
+            request.current === requestId &&
+            authorityRef.current === captured
+          ) {
+            setView(undefined);
             setError("암호화 초안을 안전하게 열 수 없습니다.");
           }
         })
         .finally(() => {
-          if (request.current === requestId) setBusy(false);
+          if (
+            mounted.current &&
+            request.current === requestId &&
+            authorityRef.current === captured
+          ) {
+            setBusy(false);
+          }
         });
     },
   };

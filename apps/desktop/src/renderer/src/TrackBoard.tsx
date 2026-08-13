@@ -25,6 +25,7 @@ export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }
   const [criminalError, setCriminalError] = useState("");
   const [civilError, setCivilError] = useState("");
   const [citations, setCitations] = useState<readonly KoreanLawCitation[]>([]);
+  const [contextRevision, setContextRevision] = useState(0);
   const updateCitations = useCallback(
     (next: readonly KoreanLawCitation[]) => setCitations([...next]),
     [],
@@ -40,8 +41,10 @@ export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }
     setCriminalError("");
     try {
       const result = await advance({ caseId, command });
-      if (result.status === "ok") onWorkflowChange(result.snapshot);
-      else setCriminalError(messages.transitionUnavailable);
+      if (result.status === "ok") {
+        setContextRevision((current) => current + 1);
+        onWorkflowChange(result.snapshot);
+      } else setCriminalError(messages.transitionUnavailable);
     } catch {
       setCriminalError(messages.transitionFailed);
     } finally {
@@ -59,8 +62,10 @@ export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }
     setCivilError("");
     try {
       const result = await advance({ caseId, command, userAttested: true });
-      if (result.status === "ok") onWorkflowChange(result.snapshot);
-      else setCivilError(messages.transitionUnavailable);
+      if (result.status === "ok") {
+        setContextRevision((current) => current + 1);
+        onWorkflowChange(result.snapshot);
+      } else setCivilError(messages.transitionUnavailable);
     } catch {
       setCivilError(messages.transitionFailed);
     } finally {
@@ -95,7 +100,11 @@ export function TrackBoard({ caseId, confirmedText, workflow, onWorkflowChange }
       </section>
       <section className="integration-board reveal" aria-label="공식 근거와 사건 Agent">
         <GuidancePanel caseId={caseId} onCitations={updateCitations} />
-        <AgentWorkspace caseId={caseId} officialCitationCount={citations.length} />
+        <AgentWorkspace
+          caseId={caseId}
+          key={`${caseId}:${contextRevision}`}
+          officialCitationCount={citations.length}
+        />
       </section>
       <HandoffCards />
     </>
