@@ -24,7 +24,9 @@ function qaScenario(): QaAgentScenario {
     scenario !== "malformed" &&
     scenario !== "agent-happy" &&
     scenario !== "agent-approval" &&
-    scenario !== "agent-live-controls"
+    scenario !== "agent-live-controls" &&
+    scenario !== "agent-resume" &&
+    scenario !== "agent-provider-failure"
   ) {
     throw new TypeError("Unsupported QA scenario");
   }

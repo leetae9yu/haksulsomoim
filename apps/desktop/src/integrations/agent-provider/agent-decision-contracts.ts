@@ -100,9 +100,7 @@ export function parseAgentDecision(
   } catch {
     throw new Error("Codex returned an invalid structured Agent decision");
   }
-  const normalized = record(parsed)
-    ? Object.fromEntries(Object.entries(parsed).filter(([, value]) => value !== null))
-    : parsed;
+  const normalized = omitNulls(parsed);
   const result = agentDecisionSchema.safeParse(normalized);
   if (!result.success) throw new Error("Codex returned an invalid structured Agent decision");
   const decision = result.data;
@@ -135,15 +133,40 @@ export function parseAgentDecision(
   return decision;
 }
 
+function omitNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitNulls);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => (item === null ? [] : [[key, omitNulls(item)]])),
+  );
+}
+
 function supportedOutputSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(supportedOutputSchema);
   if (!record(value)) return value;
-  return Object.fromEntries(
+  const normalized = Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       key === "oneOf" ? "anyOf" : key,
       supportedOutputSchema(item),
     ]),
   );
+  if (!record(value.properties) || !record(normalized.properties)) return normalized;
+  const required = new Set(
+    Array.isArray(value.required)
+      ? value.required.filter((item): item is string => typeof item === "string")
+      : [],
+  );
+  return {
+    ...normalized,
+    properties: Object.fromEntries(
+      Object.entries(normalized.properties).map(([key, item]) => [
+        key,
+        required.has(key) ? item : { anyOf: [item, { type: "null" }] },
+      ]),
+    ),
+    required: Object.keys(value.properties),
+    additionalProperties: false,
+  };
 }
 
 const generatedSchema = z.toJSONSchema(agentDecisionSchema) as Record<string, unknown>;

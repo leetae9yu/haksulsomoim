@@ -13,7 +13,9 @@ export type QaAgentScenario =
   | "malformed"
   | "agent-happy"
   | "agent-approval"
-  | "agent-live-controls";
+  | "agent-live-controls"
+  | "agent-resume"
+  | "agent-provider-failure";
 
 function completed(
   input: ApprovedAgentDecisionContext,
@@ -48,8 +50,11 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
   }
 
   async nextDecision(input: ApprovedAgentDecisionContext): Promise<AgentDecision> {
+    if (this.#scenario === "agent-provider-failure") {
+      throw new Error("QA Agent provider is unavailable");
+    }
     if (
-      this.#scenario === "agent-live-controls" &&
+      (this.#scenario === "agent-live-controls" || this.#scenario === "agent-resume") &&
       (!this.#crashRestart || (!this.#afterRestart && input.observations.length > 0))
     ) {
       return new Promise<never>((_resolve, reject) => {

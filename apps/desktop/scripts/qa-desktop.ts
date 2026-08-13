@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { _electron as electron, type Page } from "playwright";
 import { type DesktopQaScenario, type QaAction, runAgentScenario } from "./qa-desktop-agent.ts";
+import { runAgentResumeScenario } from "./qa-desktop-resume.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,7 +22,9 @@ function requireScenario(arguments_: readonly string[]): DesktopQaScenario {
     scenario !== "malformed" &&
     scenario !== "agent-happy" &&
     scenario !== "agent-approval" &&
-    scenario !== "agent-live-controls"
+    scenario !== "agent-live-controls" &&
+    scenario !== "agent-resume" &&
+    scenario !== "agent-provider-failure"
   ) {
     throw new TypeError("--scenario is not supported");
   }
@@ -107,39 +110,48 @@ let failure: unknown;
 let electronClosed = false;
 
 try {
-  application = await electron.launch({
-    args: [
-      `--user-data-dir=${userData}`,
-      `--qa-user-data-root=${userData}`,
-      `--qa-scenario=${scenario}`,
-      "out/main/qa.js",
-    ],
-    cwd: desktopRoot,
-  });
-  page = await application.firstWindow();
-  await page.getByRole("heading", { name: /놓치기 쉬운 절차/ }).waitFor();
-  actions.push({
-    action: "launch",
-    observed: "real Electron main, production preload, and renderer bundle rendered",
-  });
-  await reachTracks(page, scenario, actions);
-
-  if (
-    scenario === "agent-happy" ||
-    scenario === "agent-approval" ||
-    scenario === "agent-live-controls"
-  ) {
-    await runAgentScenario(page, scenario, actions, evidenceDirectory);
-  } else if (scenario === "malformed") {
-    await page.getByText("캡처에서 문자를 읽지 못했습니다.").waitFor();
-    const manualButton = page.getByRole("button", { name: "수동 내용 확인" });
-    if (!(await manualButton.isDisabled())) throw new Error("Empty manual gate was enabled");
-    actions.push({ action: "inspect malformed boundary", observed: "manual gate remained closed" });
+  if (scenario === "agent-resume") {
+    await runAgentResumeScenario({ desktopRoot, evidenceDirectory, userData, actions });
+    electronClosed = true;
   } else {
-    await page.screenshot({
-      path: resolve(evidenceDirectory, "desktop-happy.png"),
-      fullPage: true,
+    application = await electron.launch({
+      args: [
+        `--user-data-dir=${userData}`,
+        `--qa-user-data-root=${userData}`,
+        `--qa-scenario=${scenario}`,
+        "out/main/qa.js",
+      ],
+      cwd: desktopRoot,
     });
+    page = await application.firstWindow();
+    await page.getByRole("heading", { name: /놓치기 쉬운 절차/ }).waitFor();
+    actions.push({
+      action: "launch",
+      observed: "real Electron main, production preload, and renderer bundle rendered",
+    });
+    await reachTracks(page, scenario, actions);
+
+    if (
+      scenario === "agent-happy" ||
+      scenario === "agent-approval" ||
+      scenario === "agent-live-controls" ||
+      scenario === "agent-provider-failure"
+    ) {
+      await runAgentScenario(page, scenario, actions, evidenceDirectory);
+    } else if (scenario === "malformed") {
+      await page.getByText("캡처에서 문자를 읽지 못했습니다.").waitFor();
+      const manualButton = page.getByRole("button", { name: "수동 내용 확인" });
+      if (!(await manualButton.isDisabled())) throw new Error("Empty manual gate was enabled");
+      actions.push({
+        action: "inspect malformed boundary",
+        observed: "manual gate remained closed",
+      });
+    } else {
+      await page.screenshot({
+        path: resolve(evidenceDirectory, "desktop-happy.png"),
+        fullPage: true,
+      });
+    }
   }
 } catch (error) {
   failure = error;
@@ -165,19 +177,32 @@ try {
     failure = new Error(`OCR temp artifacts remain: ${ocrAfter.join(", ")}`);
   }
   if (!qaUserDataRemoved && failure === undefined) failure = new Error("QA root removal failed");
+  const cleanup = { electronClosed, qaUserDataRemoved, ocrTempArtifacts: ocrAfter };
   const receipt = {
     scenario,
     status: failure === undefined ? "PASS" : "FAIL",
     route: "main -> IPC -> production preload -> renderer -> runtime",
     actions,
-    cleanup: { electronClosed, qaUserDataRemoved, ocrTempArtifacts: ocrAfter },
+    cleanup,
     externalResources: { portsUsed: [], testServersUsed: [] },
   };
-  await writeFile(
-    resolve(evidenceDirectory, `desktop-${scenario}-actions.json`),
-    `${JSON.stringify(receipt, null, 2)}\n`,
-    { encoding: "utf8", mode: 0o600 },
-  );
+  await Promise.all([
+    writeFile(
+      resolve(evidenceDirectory, `desktop-${scenario}-actions.json`),
+      `${JSON.stringify({ scenario, actions }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    ),
+    writeFile(
+      resolve(evidenceDirectory, `desktop-${scenario}-receipt.json`),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    ),
+    writeFile(
+      resolve(evidenceDirectory, `desktop-${scenario}-cleanup.json`),
+      `${JSON.stringify(cleanup, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    ),
+  ]);
   console.log(JSON.stringify(receipt));
 }
 

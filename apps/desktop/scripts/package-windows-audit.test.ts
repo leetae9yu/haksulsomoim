@@ -7,6 +7,7 @@ import {
   fsSafeNativeInventory,
   pruneWindowsNativePayload,
 } from "./package-windows-audit.ts";
+import { pruneDependencyMetadata } from "./package-windows-prune.ts";
 
 const fsSafeNative = "node_modules/@openclaw/fs-safe/dist/native";
 const fsSafeWindowsNative = `${fsSafeNative}/win32-x64-msvc/fs-safe-native.node`;
@@ -65,6 +66,26 @@ describe("Windows package payload audit", () => {
       expect(existsSync(join(root, "node_modules/onnxruntime-node/bin/napi-v6/win32/arm64"))).toBe(
         false,
       );
+    });
+  });
+
+  test("removes non-runtime dependency metadata before archive creation", () => {
+    withTemporaryRoot((root) => {
+      write(join(root, "node_modules/package/runtime.js"), "export {};");
+      write(join(root, "node_modules/package/example.d.ts"), "010-1234-5678");
+      write(join(root, "node_modules/package/runtime.js.map"), "source map");
+      write(join(root, "node_modules/kordoc/dist/index.js"), "export {};");
+      write(join(root, "node_modules/kordoc/dist/cli.js"), "010-1234-5678");
+      write(join(root, "node_modules/kordoc/dist/mcp.js"), "010-1234-5678");
+
+      pruneDependencyMetadata(root);
+
+      expect(existsSync(join(root, "node_modules/package/runtime.js"))).toBe(true);
+      expect(existsSync(join(root, "node_modules/package/example.d.ts"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/package/runtime.js.map"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/kordoc/dist/index.js"))).toBe(true);
+      expect(existsSync(join(root, "node_modules/kordoc/dist/cli.js"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/kordoc/dist/mcp.js"))).toBe(false);
     });
   });
 

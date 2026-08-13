@@ -6,7 +6,9 @@ export type DesktopQaScenario =
   | "malformed"
   | "agent-happy"
   | "agent-approval"
-  | "agent-live-controls";
+  | "agent-live-controls"
+  | "agent-resume"
+  | "agent-provider-failure";
 export type QaAction = Readonly<{ action: string; observed: string }>;
 
 async function approveContext(page: Page, actions: QaAction[]) {
@@ -169,6 +171,31 @@ async function runApproval(
   });
 }
 
+async function runProviderFailure(
+  page: Page,
+  actions: QaAction[],
+  start: ReturnType<Page["getByTestId"]>,
+) {
+  const manual = page.locator('[data-agent-status="manual"]').waitFor();
+  await start.click();
+  await manual;
+  const civil = page
+    .locator('[data-testid="civil-state"][data-state="payment-order-pending"]')
+    .waitFor();
+  await page.getByRole("button", { name: "지급명령 신청 완료를 직접 확인" }).click();
+  await civil;
+  const criminal = page
+    .locator('[data-testid="criminal-state"][data-state="complaint-ready"]')
+    .waitFor();
+  await page.getByRole("button", { name: "고소장 준비 시작" }).click();
+  await criminal;
+  actions.push({
+    action: "continue manual workflows after provider failure",
+    observed:
+      "case creation, OCR evidence, civil transition, and criminal transition remained usable",
+  });
+}
+
 async function runLiveControls(
   page: Page,
   actions: QaAction[],
@@ -207,14 +234,18 @@ export async function runAgentScenario(
   if (scenario === "agent-happy") await runHappy(page, actions, start, evidenceDirectory);
   else if (scenario === "agent-approval") {
     await runApproval(page, actions, start, evidenceDirectory);
+  } else if (scenario === "agent-provider-failure") {
+    await runProviderFailure(page, actions, start);
   } else await runLiveControls(page, actions, start);
 
   const clipping = await workspace.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
-  if (clipping.scrollWidth > clipping.clientWidth) {
-    throw new Error("Agent workspace clips horizontally");
+  if (clipping.clientWidth !== 478 || clipping.scrollWidth > clipping.clientWidth) {
+    throw new Error(
+      `Agent workspace Korean layout is ${clipping.clientWidth}/${clipping.scrollWidth}`,
+    );
   }
   actions.push({
     action: "audit Korean workspace",

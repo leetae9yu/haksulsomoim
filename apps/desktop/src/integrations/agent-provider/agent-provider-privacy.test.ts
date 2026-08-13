@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_DECISION_OUTPUT_SCHEMA } from "./agent-decision-contracts";
+import { AGENT_DECISION_OUTPUT_SCHEMA, parseAgentDecision } from "./agent-decision-contracts";
 import type {
   ApprovedAgentDecisionContext,
   CodexAppServerConnection,
@@ -35,11 +35,49 @@ const context = (text: string) =>
     observations: [],
   }) as unknown as ApprovedAgentDecisionContext;
 
+function requiresEveryProperty(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every(requiresEveryProperty);
+  if (typeof value !== "object" || value === null) return true;
+  const record = value as Record<string, unknown>;
+  const properties = record.properties;
+  if (typeof properties === "object" && properties !== null && !Array.isArray(properties)) {
+    const required = record.required;
+    if (
+      !Array.isArray(required) ||
+      JSON.stringify([...required].sort()) !== JSON.stringify(Object.keys(properties).sort())
+    ) {
+      return false;
+    }
+  }
+  return Object.values(record).every(requiresEveryProperty);
+}
+
 describe("Codex provider privacy boundary", () => {
   test("uses the provider-supported closed decision schema", () => {
     const serialized = JSON.stringify(AGENT_DECISION_OUTPUT_SCHEMA);
     expect(serialized).not.toContain('"oneOf"');
     expect(serialized).toContain('"anyOf"');
+    expect(requiresEveryProperty(AGENT_DECISION_OUTPUT_SCHEMA)).toBe(true);
+  });
+
+  test("accepts nullable provider optional fields after local normalization", () => {
+    expect(
+      parseAgentDecision(
+        JSON.stringify({
+          kind: "tool",
+          decisionId: "decision-1",
+          toolCall: {
+            toolName: "search-official-law",
+            toolCallId: "tool-1",
+            query: "지급명령",
+            basisObservationDigest: null,
+          },
+          approval: null,
+          outcome: null,
+        }),
+        context("마스킹된 사실"),
+      ),
+    ).toMatchObject({ kind: "tool", toolCall: { toolName: "search-official-law" } });
   });
 
   test.each([

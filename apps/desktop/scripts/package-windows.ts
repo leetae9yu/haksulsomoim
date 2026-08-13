@@ -32,6 +32,7 @@ import {
   validateInstallerTemplate,
   validateUninstallerTemplate,
 } from "./package-windows-lib.ts";
+import { pruneDependencyMetadata } from "./package-windows-prune.ts";
 
 async function packageWindows(desktopRoot: string): Promise<void> {
   const packagePath = join(desktopRoot, "package.json");
@@ -89,6 +90,7 @@ async function packageWindows(desktopRoot: string): Promise<void> {
     );
     pruneWindowsNativePayload(join(unpackedRoot, "resources", "app.asar.unpacked"));
     pruneDependencyTests(unpackedDependencies);
+    pruneDependencyMetadata(unpackedDependencies);
     if (collectPaths(unpackedDependencies).some((path) => isDependencyTestPath(path))) {
       throw new Error("Packaged production dependencies still contain test payload");
     }
