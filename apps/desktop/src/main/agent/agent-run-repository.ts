@@ -1,7 +1,11 @@
 import type { AgentRun, AgentStep } from "./agent-contracts";
 import { agentRunSchema } from "./agent-contracts";
+import { EncryptedAgentCaseClaimStore } from "./agent-run-case-claim";
+import { AgentRunCaseOwnership, interruptAgentRunForRestart } from "./agent-run-case-ownership";
 import { type AgentRunSnapshot, EncryptedAgentRunRecordStore } from "./agent-run-repository-record";
+import { hasSensitiveAgentText } from "./agent-run-repository-safety";
 
+export { AgentCaseAlreadyClaimedError, AgentCaseClaimInvariantError } from "./agent-run-case-claim";
 export {
   AgentRunAlreadyExistsError,
   AgentRunNotFoundError,
@@ -23,32 +27,13 @@ export class AgentRunInvariantError extends Error {
   }
 }
 
-const SENSITIVE_TEXT = [
-  /(?<!\d)\d{6}-?[1-4]\d{6}(?!\d)/u,
-  /(?<!\d)01[016789][ -]?\d{3,4}[ -]?\d{4}(?!\d)/u,
-  /(?<!\d)\d{2,6}(?:-\d{2,6}){2,4}(?!\d)/u,
-  /(?<!\d)(?:19|20)\d{2}[가-힣]{1,4}\d{1,10}(?!\d)/u,
-  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu,
-  /\b(?:bearer|api[_-]?key|secret)\s*[:=]\s*\S+/iu,
-  /\bsk-[A-Za-z0-9_-]{16,}\b/u,
-] as const;
-
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function assertSafeText(run: AgentRun): void {
-  for (const step of run.steps) {
-    const call =
-      step.kind === "decision-recorded" && step.decision.kind === "tool"
-        ? step.decision.toolCall
-        : step.kind === "tool-started"
-          ? step.toolCall
-          : undefined;
-    if (call?.toolName !== "search-official-law") continue;
-    if (SENSITIVE_TEXT.some((pattern) => pattern.test(call.query))) {
-      throw new AgentRunInvariantError("Persisted Agent text must be redacted");
-    }
+  if (hasSensitiveAgentText(run)) {
+    throw new AgentRunInvariantError("Persisted Agent text must be redacted");
   }
 }
 
@@ -172,22 +157,9 @@ function isIdempotentResultRetry(existing: AgentRunSnapshot, candidate: AgentRun
   );
 }
 
-function interrupted(run: AgentRun, locator: string): AgentRun {
-  const interruption = { kind: "application-restarted" as const };
-  const interruptedStep = {
-    kind: "interrupted",
-    stepId: `restart_${locator.slice(0, 16)}_${run.steps.length}`,
-    interruption,
-  };
-  return agentRunSchema.parse({
-    ...run,
-    state: { kind: "interrupted", interruption },
-    steps: run.steps.length < 41 ? [...run.steps, interruptedStep] : run.steps,
-  });
-}
-
 export class AgentRunRepository {
   readonly #store: EncryptedAgentRunRecordStore;
+  readonly #ownership: AgentRunCaseOwnership;
 
   constructor(options: AgentRunRepositoryOptions) {
     if (options.directory.length === 0) throw new TypeError("An Agent run directory is required");
@@ -195,13 +167,48 @@ export class AgentRunRepository {
       throw new RangeError("AES-256-GCM requires a 32-byte encryption key");
     }
     this.#store = new EncryptedAgentRunRecordStore(options.directory, options.encryptionKey);
+    this.#ownership = new AgentRunCaseOwnership(
+      this.#store,
+      new EncryptedAgentCaseClaimStore(options.directory, options.encryptionKey),
+    );
   }
 
   async create(run: AgentRun): Promise<void> {
     const parsed = agentRunSchema.parse(run);
     assertSafeText(parsed);
     assertUniqueHistory(parsed.steps);
+    if (parsed.state.kind === "active") {
+      await this.#ownership.create(parsed);
+      return;
+    }
     await this.#store.write({ run: parsed, cursor: 0 }, true);
+  }
+
+  async createOwned(run: AgentRun): Promise<void> {
+    const parsed = agentRunSchema.parse(run);
+    if (parsed.state.kind !== "active") {
+      throw new AgentRunInvariantError("Only active Agent runs may acquire a case claim");
+    }
+    assertSafeText(parsed);
+    assertUniqueHistory(parsed.steps);
+    await this.#ownership.create(parsed);
+  }
+
+  activeRunId(caseId: string): Promise<string | undefined> {
+    if (caseId.length === 0) throw new TypeError("An Agent case ID is required");
+    return this.#ownership.activeRunId(caseId);
+  }
+
+  recoverActiveCase(caseId: string): Promise<AgentRunSnapshot | undefined> {
+    if (caseId.length === 0) throw new TypeError("An Agent case ID is required");
+    return this.#ownership.recover(caseId);
+  }
+
+  releaseOwned(caseId: string, runId: string): Promise<void> {
+    if (caseId.length === 0 || runId.length === 0) {
+      throw new TypeError("Agent case and run IDs are required");
+    }
+    return this.#ownership.release(caseId, runId);
   }
 
   async load(runId: string): Promise<AgentRunSnapshot> {
@@ -209,17 +216,17 @@ export class AgentRunRepository {
     const snapshot = await this.#store.read(runId);
     assertSafeText(snapshot.run);
     assertUniqueHistory(snapshot.run.steps);
-    if (
-      snapshot.run.state.kind === "interrupted" ||
-      !hasInFlight(snapshot.run.steps.slice(snapshot.cursor))
-    ) {
+    if (snapshot.run.state.kind !== "active") {
+      await this.#ownership.release(snapshot.run.caseId, runId);
       return snapshot;
     }
+    if (!hasInFlight(snapshot.run.steps.slice(snapshot.cursor))) return snapshot;
     const recovered = {
-      run: interrupted(snapshot.run, this.#store.locator(runId)),
+      run: interruptAgentRunForRestart(snapshot.run, this.#store.locator(runId)),
       cursor: snapshot.cursor,
     };
     await this.#store.write(recovered, false, snapshot);
+    await this.#ownership.release(snapshot.run.caseId, runId);
     return recovered;
   }
 

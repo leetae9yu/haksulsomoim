@@ -31,6 +31,14 @@ class ObservedRunStore implements AgentRunStore {
     return this.#repository.create(run);
   }
 
+  createOwned(run: AgentRun): Promise<void> {
+    return this.#repository.createOwned(run);
+  }
+
+  releaseOwned(caseId: string, runId: string): Promise<void> {
+    return this.#repository.releaseOwned(caseId, runId);
+  }
+
   load(runId: string): Promise<AgentRunSnapshot> {
     return this.#repository.load(runId);
   }

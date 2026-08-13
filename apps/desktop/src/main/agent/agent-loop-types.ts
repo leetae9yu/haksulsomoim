@@ -5,6 +5,8 @@ import type { AgentRunSnapshot } from "./agent-run-repository";
 
 export interface AgentRunStore {
   create(run: AgentRun): Promise<void>;
+  createOwned(run: AgentRun): Promise<void>;
+  releaseOwned(caseId: string, runId: string): Promise<void>;
   load(runId: string): Promise<AgentRunSnapshot>;
   save(snapshot: AgentRunSnapshot): Promise<void>;
 }

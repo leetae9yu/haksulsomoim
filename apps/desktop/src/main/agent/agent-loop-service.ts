@@ -47,18 +47,14 @@ export class AgentLoopService {
         citationIds: projection.citationIds,
         run,
       });
-      await this.#dependencies.runs.create(run);
+      await this.#dependencies.runs.createOwned(run);
       this.#active.set(input.caseId, runner);
       return { run, runner };
     });
     if (prepared.runner === undefined) return prepared.run;
-    try {
-      return await prepared.runner.drive();
-    } finally {
-      if (this.#active.get(input.caseId) === prepared.runner) {
-        this.#active.delete(input.caseId);
-      }
-    }
+    const run = await prepared.runner.drive();
+    await this.#releaseRunner(prepared.runner, run);
+    return run;
   }
 
   async cancel(input: AgentLoopRunReference): Promise<AgentRun> {
@@ -66,7 +62,9 @@ export class AgentLoopService {
     if (runner === undefined || runner.runId !== input.runId) {
       throw new AgentLoopStateError("The requested Agent run is not active for this case");
     }
-    return runner.cancel();
+    const run = await runner.cancel();
+    await this.#releaseRunner(runner, run);
+    return run;
   }
 
   async decideApproval(input: AgentLoopApprovalInput): Promise<AgentLoopApprovalResolution> {
@@ -107,6 +105,17 @@ export class AgentLoopService {
       );
       await commitAgentRun(this.#dependencies.runs, snapshot, run, true);
       return { status: "recorded", run };
+    });
+  }
+
+  async #releaseRunner(runner: AgentLoopRunner, run: AgentRun): Promise<void> {
+    if (run.state.kind === "active") {
+      throw new AgentLoopStateError("An active Agent run cannot release case ownership");
+    }
+    await this.#dependencies.mutations.run(runner.caseId, async () => {
+      if (this.#active.get(runner.caseId) !== runner) return;
+      await this.#dependencies.runs.releaseOwned(runner.caseId, runner.runId);
+      this.#active.delete(runner.caseId);
     });
   }
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { agentStepSchema } from "./agent-contracts";
 import { AgentRunRepository } from "./agent-run-repository";
 import {
   activeRun,
@@ -15,6 +16,12 @@ import {
 
 const roots: string[] = [];
 const key = new Uint8Array(32).fill(7);
+
+function runRecordName(names: readonly string[]): string {
+  const name = names.find((candidate) => candidate.endsWith(".json"));
+  if (name === undefined) throw new Error("missing encrypted Agent run record");
+  return name;
+}
 
 async function fixture(): Promise<{
   root: string;
@@ -47,19 +54,22 @@ describe("encrypted Agent run repository", () => {
       cursor: 2,
     });
     const names = await readdir(root);
-    expect(names).toEqual([expect.stringMatching(/^[a-f0-9]{64}\.json$/u)]);
-    const path = join(root, names[0] as string);
-    const bytes = await readFile(path, "utf8");
-    for (const sentinel of [
-      "private-run",
-      "private-case",
-      "search-official-law",
-      "masked payment order requirements",
-      "provider secret failure",
-    ]) {
-      expect(bytes).not.toContain(sentinel);
+    expect(names).toHaveLength(2);
+    expect(names.every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name))).toBe(true);
+    for (const name of names) {
+      const path = join(root, name);
+      const bytes = await readFile(path, "utf8");
+      for (const sentinel of [
+        "private-run",
+        "private-case",
+        "search-official-law",
+        "masked payment order requirements",
+        "provider secret failure",
+      ]) {
+        expect(bytes).not.toContain(sentinel);
+      }
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
     }
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
   test("resumes from the last committed observation without duplicate execution", async () => {
@@ -121,7 +131,9 @@ describe("encrypted Agent run repository", () => {
     await repository.create(initial);
 
     await expect(repository.create(initial)).rejects.toThrow("already exists");
-    expect(await readdir(root)).toEqual([expect.stringMatching(/^[a-f0-9]{64}\.json$/u)]);
+    const names = await readdir(root);
+    expect(names).toHaveLength(2);
+    expect(names.every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name))).toBe(true);
   });
 
   test("rejects plaintext, corrupt records, and duplicate publication", async () => {
@@ -157,7 +169,7 @@ describe("encrypted Agent run repository", () => {
       repository.create(withSteps(activeRun("malformed-run"), [decisionRecorded()])),
     ).rejects.toThrow("start checkpoint");
     const names = await readdir(root);
-    const path = join(root, names[0] as string);
+    const path = join(root, runRecordName(names));
     await chmod(path, 0o600);
     await writeFile(path, JSON.stringify({ version: 1, nonce: "malformed" }), "utf8");
     await expect(repository.load(unsafe.runId)).rejects.toThrow();
@@ -173,10 +185,10 @@ describe("encrypted Agent run repository", () => {
     if (finished.kind !== "tool-finished" || finished.result.toolName !== "search-official-law") {
       throw new Error("fixture mismatch");
     }
-    const mismatched = {
+    const mismatched = agentStepSchema.parse({
       ...finished,
-      result: { ...finished.result, toolName: "inspect-masked-case" as const },
-    };
+      result: { ...finished.result, toolName: "inspect-masked-case" },
+    });
     await repository.create(initial);
     await repository.save({ run: withSteps(initial, started), cursor: 0 });
 

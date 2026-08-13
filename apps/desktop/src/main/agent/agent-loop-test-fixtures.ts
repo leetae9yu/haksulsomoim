@@ -8,7 +8,11 @@ import {
   AgentLoopService,
 } from "./agent-loop-service";
 import type { AgentCaseProjection, AgentCaseProjectionReader } from "./agent-loop-types";
-import type { AgentRunSnapshot } from "./agent-run-repository";
+import {
+  AgentCaseAlreadyClaimedError,
+  AgentCaseClaimInvariantError,
+  type AgentRunSnapshot,
+} from "./agent-run-repository";
 import { type AgentOfficialLawTools, AgentToolRegistry } from "./agent-tool-registry";
 
 export const DIGEST_A = "a".repeat(64);
@@ -18,9 +22,32 @@ export const DIGEST_C = "c".repeat(64);
 export class MemoryAgentRunStore {
   readonly snapshots = new Map<string, AgentRunSnapshot>();
   readonly saves: AgentRunSnapshot[] = [];
+  readonly #owners = new Map<string, string>();
 
   async create(run: AgentRun): Promise<void> {
     this.snapshots.set(run.runId, structuredClone({ run, cursor: 0 }));
+  }
+
+  async createOwned(run: AgentRun): Promise<void> {
+    if (this.#owners.has(run.caseId)) throw new AgentCaseAlreadyClaimedError();
+    this.#owners.set(run.caseId, run.runId);
+    try {
+      await this.create(run);
+    } catch (error) {
+      if (this.#owners.get(run.caseId) === run.runId) this.#owners.delete(run.caseId);
+      throw error;
+    }
+  }
+
+  async releaseOwned(caseId: string, runId: string): Promise<void> {
+    const owner = this.#owners.get(caseId);
+    if (owner === undefined) return;
+    if (owner !== runId) throw new AgentCaseClaimInvariantError("Agent owner mismatch");
+    const snapshot = await this.load(runId);
+    if (snapshot.run.state.kind === "active") {
+      throw new AgentCaseClaimInvariantError("Cannot release an active Agent run");
+    }
+    this.#owners.delete(caseId);
   }
 
   async load(runId: string): Promise<AgentRunSnapshot> {
