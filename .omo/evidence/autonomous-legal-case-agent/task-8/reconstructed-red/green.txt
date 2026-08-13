@@ -1,0 +1,72 @@
+revision=6bb3c5d6f72adf16ca3f55e1a31746502ac8b00d
+harness_source=21053b375758982a9a54e883b1c57528ff77df3b
+command=bun test src/security/redaction.test.ts src/integrations/agent-provider/agent-provider-privacy.test.ts src/main/agent/agent-privacy-boundaries.test.ts src/integrations/korean-law-mcp/citation-parser.test.ts src/integrations/korean-law-mcp/korean-law-mcp.test.ts src/integrations/agent-provider/agent-provider-decisions.test.ts src/main/agent/agent-loop-service-limits.test.ts src/main/agent/agent-loop-service-boundaries.test.ts
+overlay_status:
+ M apps/desktop/src/integrations/agent-provider/agent-provider-privacy.test.ts
+?? apps/desktop/node_modules
+--- output ---
+bun test v1.3.14 (0d9b296a)
+
+src/security/redaction.test.ts:
+(pass) Redactor > removes every direct identifier from outbound text [5.29ms]
+(pass) Redactor > redacts email and person-name fields at the explicit structured-data boundary [0.32ms]
+(pass) Redactor > masks direct identifiers embedded in adversarial OCR, filenames, URLs, and paths [0.52ms]
+(pass) Redactor > masks email addresses without relying on optional structured metadata [0.59ms]
+(pass) Redactor > uses stable tokens within one case and unlinkable tokens across cases [0.86ms]
+(pass) Redactor > diagnostics are constructed only from branded redacted fields [0.45ms]
+
+src/integrations/agent-provider/agent-provider-decisions.test.ts:
+(pass) structured Codex agent decisions > returns one typed next decision from approved masked context [63.54ms]
+(pass) structured Codex agent decisions > interrupts a timed-out turn and ignores late completion [1.87ms]
+(pass) structured Codex agent decisions > rejects malformed decisions and non-completed turns [6.63ms]
+(pass) structured Codex agent decisions > disposal rejects active work without exposing provider details [0.89ms]
+
+src/integrations/agent-provider/agent-provider-privacy.test.ts:
+(pass) Codex provider privacy boundary > uses the provider-supported closed decision schema [0.18ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "900101-1234567" before creating an outbound thread [3.42ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "010-1234-5678" before creating an outbound thread [0.28ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "서울특별시 종로구 세종대로 209" before creating an outbound thread [0.16ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "110-123-456789" before creating an outbound thread [0.74ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "2024가단123456" before creating an outbound thread [0.14ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "claimant@example.com" before creating an outbound thread [0.10ms]
+(pass) Codex provider privacy boundary > rejects raw identifier "sender: 홍길동" before creating an outbound thread [0.10ms]
+
+src/integrations/korean-law-mcp/citation-parser.test.ts:
+(pass) Korean law citation parsing > preserves provenance and derives a stable citation identity [1.05ms]
+(pass) Korean law citation parsing > accepts citations only from exact official Korean-law origins [0.32ms]
+(pass) Korean law citation parsing > rejects malicious official-looking URLs and unsafe provenance metadata [0.28ms]
+(pass) Korean law citation parsing > collapses repeated provenance to one canonical identity [0.39ms]
+(pass) Korean law citation parsing > derives an official citation from a text-only law response [0.83ms]
+
+src/integrations/korean-law-mcp/korean-law-mcp.test.ts:
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC=undefined [0.58ms]
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC="" [0.03ms]
+(pass) Korean law MCP adapter > returns typed needs_credentials before launching for LAW_OC="   " [0.03ms]
+(pass) Korean law MCP adapter > injects LAW_OC only into the child environment and never args or logs [1.18ms]
+(pass) Korean law MCP adapter > returns an opaque error without raw provider IDs, secrets, paths, or URLs [0.46ms]
+(pass) Korean law MCP adapter > exposes exactly the five approved tools and rejects arbitrary discovery or execution [0.88ms]
+
+src/main/agent/agent-loop-service-boundaries.test.ts:
+(pass) Agent loop context and availability boundaries > pauses before outbound work when the approved context digest changed [5.91ms]
+(pass) Agent loop context and availability boundaries > rechecks context after the provider and executes zero stale-context tools [7.50ms]
+(pass) Agent loop context and availability boundaries > pauses for unavailable provider while manual case work remains callable [0.87ms]
+(pass) Agent loop context and availability boundaries > persists an unavailable law observation and leaves manual work callable [8.54ms]
+(pass) Agent loop context and availability boundaries > rejects provider attempts to forge host-owned terminal outcomes [2.77ms]
+(pass) Agent loop context and availability boundaries > records an exact denial and keeps the consequential action pending [5.33ms]
+
+src/main/agent/agent-loop-service-limits.test.ts:
+(pass) Agent loop limits and ownership > stops at twelve decisions and never reexecutes an exact duplicate result [25.80ms]
+(pass) Agent loop limits and ownership > stops after exactly eight safe tool executions [20.46ms]
+(pass) Agent loop limits and ownership > charges provider time against the exact five minute budget [1.33ms]
+(pass) Agent loop limits and ownership > allows one active run per case and cancellation interrupts after persistence [3.00ms]
+
+src/main/agent/agent-privacy-boundaries.test.ts:
+(pass) Agent privacy boundaries > keeps raw filenames local and masks adversarial confirmed OCR in model context [1.46ms]
+
+ 40 pass
+ 0 fail
+ 152 expect() calls
+Ran 40 tests across 8 files. [547.00ms]
+
+exit_code=0
+expected=zero

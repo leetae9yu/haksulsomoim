@@ -1,0 +1,14 @@
+captured_utc=2026-08-13T19:48:18Z
+head=6bb3c5d6f72adf16ca3f55e1a31746502ac8b00d
+27504ab539e3b2d160c76369b37f824f93f22baf9b73bc50e9b9a744b4e630d6  apps/desktop/dist/small-fraud-agent-0.1.0-x64-setup.exe
+path=apps/desktop/dist/small-fraud-agent-0.1.0-x64-setup.exe
+type=regular file
+size=281300107
+mode=600
+uid=1000
+gid=1000
+owner=opc:opc
+links=1
+inode=136462986
+device=64512
+identity_gate=PASS

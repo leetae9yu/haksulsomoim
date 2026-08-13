@@ -1,0 +1,10 @@
+harness_source_commit=21053b375758982a9a54e883b1c57528ff77df3b
+harness_policy=exact test blobs from Todo 8 fix commit, copied without assertion changes
+e1ad798ac9d36e1d394a36749d02b73f598b351be5a736b32fe63dbf8adf6aa3  apps/desktop/src/security/redaction.test.ts
+dbaef657f17699e98781e20a648c76f3e038960170bec5a16c4b4893c0a33123  apps/desktop/src/integrations/agent-provider/agent-provider-privacy.test.ts
+1516a095cf8bff3f4e37ae8a082cd215e76e5cbeaa1e3a8381bbf8a5ede7420f  apps/desktop/src/main/agent/agent-privacy-boundaries.test.ts
+6945b7d408342fc38830192fb2b5d73e3cb619d41a5d3680f5954193a89baa07  apps/desktop/src/integrations/korean-law-mcp/citation-parser.test.ts
+0220ad2d553877506de6b4e2859935e48adbb1cf047271caecef46d1bdfc96a7  apps/desktop/src/integrations/korean-law-mcp/korean-law-mcp.test.ts
+6f162823d1b9d38c8fd21b42f1465c28516cc52db526a323f70d6916851460d6  apps/desktop/src/integrations/agent-provider/agent-provider-decisions.test.ts
+2dd04c2fb464a5a3b1a5778d7a45d71861deb9904c829ec8ed5b689c7ef81466  apps/desktop/src/main/agent/agent-loop-service-limits.test.ts
+9cc5109fde7306e0447791e6d1e9758eeee6b5b1671f348198ce89da98630d1d  apps/desktop/src/main/agent/agent-loop-service-boundaries.test.ts

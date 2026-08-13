@@ -1,0 +1,3 @@
+detached_worktrees_removed=true
+node_modules_links_removed=true
+worktree_metadata_pruned=true
