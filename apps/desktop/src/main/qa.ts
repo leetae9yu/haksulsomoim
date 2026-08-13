@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { app } from "electron";
 import type { KoreanLawMcpAdapter } from "../integrations/korean-law-mcp/korean-law-mcp";
@@ -77,7 +77,7 @@ function createQaLaw(): KoreanLawMcpAdapter {
       call += 1;
       if (unresolvedTool && call > 1) {
         if (unresolvedMarker !== undefined)
-          await writeFile(unresolvedMarker, "entered", { mode: 0o600 });
+          await appendFile(unresolvedMarker, `${process.pid}\n`, { mode: 0o600 });
         return new Promise<never>(() => undefined);
       }
       const ids = [

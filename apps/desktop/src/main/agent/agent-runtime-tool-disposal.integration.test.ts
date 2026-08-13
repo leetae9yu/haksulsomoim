@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { unresolvedAgentToolLeaseError } from "../../contracts/agent-lifecycle-failure";
 import type { CodexAgentDecisionProvider } from "../../integrations/agent-provider/agent-provider";
 import type { KoreanLawMcpAdapter } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import { createDesktopRuntime } from "../runtime";
@@ -122,7 +123,9 @@ describe("Agent runtime tool disposal", () => {
       createLaw: () => law,
       createProvider: async () => provider,
     });
-    await expect(replacement.agent.openCase(created.caseId)).rejects.toThrow("quarantined");
+    await expect(replacement.agent.openCase(created.caseId)).rejects.toThrow(
+      unresolvedAgentToolLeaseError,
+    );
     await replacement.dispose();
 
     release.resolve();

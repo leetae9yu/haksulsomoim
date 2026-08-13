@@ -1,3 +1,4 @@
+import { unresolvedAgentToolLeaseError } from "../../contracts/agent-lifecycle-failure";
 import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import { type AgentRun, agentRunSchema } from "./agent-contracts";
 import {
@@ -108,7 +109,7 @@ export class AgentRunCaseOwnership {
 
   async recover(caseId: string): Promise<AgentRunSnapshot | undefined> {
     if (await this.#claims.isQuarantined(caseId)) {
-      throw new AgentCaseClaimInvariantError("Agent case is quarantined by an unresolved tool");
+      throw new AgentCaseClaimInvariantError(unresolvedAgentToolLeaseError);
     }
     const runId = await this.#claims.owner(caseId);
     if (runId === undefined) return undefined;

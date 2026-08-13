@@ -6,6 +6,7 @@ import { agentGoal } from "./agent-workspace-goal";
 import { acceptAgentProjection, acceptAgentProjectionEvent } from "./agent-workspace-projection";
 import { type AgentProviderState, agentUiStatus } from "./agent-workspace-state";
 import { useAgentArtifact } from "./use-agent-artifact";
+import { useAgentRecovery } from "./use-agent-recovery";
 
 type GoalChoice = "civil" | "criminal" | undefined;
 interface AgentWorkspaceProps {
@@ -25,41 +26,16 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [inputValue, setInputValue] = useState("");
-  const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const artifactControl = useAgentArtifact(caseId, projection, contextDigest);
-  const caseRef = useRef(caseId);
-  const requestRef = useRef(0);
-  const approvalRef = useRef<HTMLDivElement>(null);
-  caseRef.current = caseId;
-  useEffect(() => {
-    const requestId = ++requestRef.current;
-    setProjection(undefined);
+  const recovery = useAgentRecovery(caseId, setProjection, () => {
     setGoal(undefined);
     setConsent(false);
     setContextDigest(undefined);
     setError("");
     setInputValue("");
-    setServiceUnavailable(false);
-    const list = window.haksul.listAgentRuns;
-    if (list === undefined) {
-      setServiceUnavailable(true);
-      return;
-    }
-    let current = true;
-    void list({ caseId })
-      .then((runs) => {
-        if (!current || requestId !== requestRef.current || caseRef.current !== caseId) return;
-        setProjection(runs.at(-1));
-      })
-      .catch(() => {
-        if (current && requestId === requestRef.current && caseRef.current === caseId) {
-          setServiceUnavailable(true);
-        }
-      });
-    return () => {
-      current = false;
-    };
-  }, [caseId]);
+  });
+  const { caseRef, isCurrentCase, requestRef } = recovery;
+  const approvalRef = useRef<HTMLDivElement>(null);
   const runId = projection?.runId;
   useEffect(() => {
     if (
@@ -70,10 +46,10 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
       return;
     }
     return window.haksul.subscribeAgentRun({ caseId, runId, contextDigest }, (event) => {
-      if (caseRef.current !== caseId || event.caseId !== caseId || event.runId !== runId) return;
+      if (!isCurrentCase(caseId) || event.caseId !== caseId || event.runId !== runId) return;
       setProjection((current) => acceptAgentProjectionEvent(current, event.projection));
     });
-  }, [caseId, contextDigest, runId]);
+  }, [caseId, contextDigest, isCurrentCase, runId]);
   const approvalId = projection?.pendingApproval?.approvalId;
   useEffect(() => {
     if (approvalId !== undefined) approvalRef.current?.focus();
@@ -102,7 +78,7 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
   async function approveContext() {
     const openCase = window.haksul.openAgentCase;
     if (openCase === undefined) {
-      setServiceUnavailable(true);
+      setError(unavailableMessage);
       return;
     }
     const requestId = ++requestRef.current;
@@ -135,9 +111,10 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
       !consent ||
       contextDigest === undefined ||
       openCase === undefined ||
-      startRun === undefined
+      startRun === undefined ||
+      recovery.issue !== undefined
     ) {
-      setServiceUnavailable(openCase === undefined || startRun === undefined);
+      if (openCase === undefined || startRun === undefined) setError(unavailableMessage);
       return;
     }
     const selectedGoal = agentGoal(goal, caseId);
@@ -222,10 +199,12 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
     );
   }
 
-  const effectiveProvider: AgentProviderState = serviceUnavailable
-    ? { status: "manual" }
-    : provider.state;
-  const status = agentUiStatus(effectiveProvider, projection);
+  const effectiveProvider: AgentProviderState =
+    recovery.issue === "unavailable" ? { status: "manual" } : provider.state;
+  const status =
+    recovery.issue === "unresolved-tool"
+      ? "unresolved-tool"
+      : agentUiStatus(effectiveProvider, projection);
 
   return (
     <AgentWorkspaceView
@@ -235,12 +214,13 @@ export function AgentWorkspace({ caseId, officialCitationCount }: AgentWorkspace
       caseId={caseId}
       consent={consent}
       contextDigest={contextDigest}
-      error={serviceUnavailable && error.length === 0 ? unavailableMessage : error}
+      error={recovery.issue === "unavailable" && error.length === 0 ? unavailableMessage : error}
       goal={goal}
       inputValue={inputValue}
       officialCitationCount={officialCitationCount}
       projection={projection}
       provider={effectiveProvider}
+      recovery={recovery}
       providerBusy={provider.busy}
       status={status}
       onApproval={decideApproval}

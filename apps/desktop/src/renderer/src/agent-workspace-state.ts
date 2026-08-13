@@ -22,7 +22,8 @@ export type AgentUiStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "interrupted";
+  | "interrupted"
+  | "unresolved-tool";
 
 export function providerFromResponse(response: CodexStatusResponse): AgentProviderState {
   if (response.status === "offline") return { status: "manual" };
@@ -76,6 +77,8 @@ const statusMessages: Record<AgentUiStatus, string> = {
   failed: "Agent 실행이 안전 경계에서 종료되었습니다. 수동 절차를 계속 이용할 수 있습니다.",
   cancelled: "Agent 실행을 취소했습니다.",
   interrupted: "Agent 실행이 중단되었습니다. 확인 후 명시적으로 재개하세요.",
+  "unresolved-tool":
+    "이전 실행의 외부 도구 결과가 확인되지 않아 이 사건의 Agent 실행이 안전하게 잠겨 있습니다.",
 };
 
 export const statusMessage = (status: AgentUiStatus): string => statusMessages[status];

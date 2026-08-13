@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import type { AgentRunProjection } from "../../contracts/desktop-api";
 import { AgentProviderStatus } from "./AgentProviderStatus";
+import { AgentRecoveryNotice, agentStartControlLabel } from "./AgentRecoveryNotice";
 import { AgentTimeline } from "./AgentTimeline";
 import {
   type AgentProviderState,
@@ -9,6 +10,7 @@ import {
   statusMessage,
 } from "./agent-workspace-state";
 import type { AgentArtifactControl } from "./use-agent-artifact";
+import type { AgentRecoveryControl } from "./use-agent-recovery";
 
 type GoalChoice = "civil" | "criminal" | undefined;
 
@@ -25,6 +27,7 @@ interface AgentWorkspaceViewProps {
   readonly officialCitationCount: number;
   readonly projection: AgentRunProjection | undefined;
   readonly provider: AgentProviderState;
+  readonly recovery: AgentRecoveryControl;
   readonly providerBusy: boolean;
   readonly status: AgentUiStatus;
   readonly onApproval: (outcome: "approved" | "denied") => void;
@@ -45,6 +48,7 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
     props.consent &&
     props.contextDigest !== undefined &&
     props.provider.status === "authenticated" &&
+    props.recovery.issue === undefined &&
     !props.busy &&
     (props.projection === undefined || props.projection.state.kind === "terminal");
   const active = props.projection?.state.kind === "active";
@@ -93,7 +97,12 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
         {statusMessage(props.status)}
       </p>
 
-      <fieldset className="agent-goal-fieldset" disabled={props.busy || active}>
+      <AgentRecoveryNotice error={props.error} recovery={props.recovery} />
+
+      <fieldset
+        className="agent-goal-fieldset"
+        disabled={props.busy || active || props.recovery.issue === "unresolved-tool"}
+      >
         <legend>1. 사건 목표 선택</legend>
         <div className="agent-goal-grid">
           <label className="agent-goal-card civil" data-testid="agent-civil-track">
@@ -137,7 +146,7 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
         <label className="checkbox-row">
           <input
             checked={props.consent}
-            disabled={props.busy || active}
+            disabled={props.busy || active || props.recovery.issue === "unresolved-tool"}
             onChange={(event) => props.onConsent(event.target.checked)}
             type="checkbox"
           />
@@ -149,7 +158,7 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
           onClick={props.onStart}
           type="button"
         >
-          {props.busy ? "Agent 확인 중…" : "Agent 실행 시작"}
+          {agentStartControlLabel(props.recovery, props.busy)}
         </button>
       </div>
 
@@ -241,11 +250,6 @@ export function AgentWorkspaceView(props: AgentWorkspaceViewProps) {
           )}
           <AgentTimeline artifactControl={props.artifactControl} projection={props.projection} />
         </>
-      )}
-      {props.error.length > 0 && (
-        <p className="notice error" role="alert">
-          {props.error}
-        </p>
       )}
     </section>
   );

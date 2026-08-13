@@ -1,27 +1,42 @@
 import { execFile } from "node:child_process";
 import { watch } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { _electron as electron, type Page } from "playwright";
+import { type ElectronApplication, _electron as electron, type Page } from "playwright";
 
 const execFileAsync = promisify(execFile);
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const evidenceDirectory = resolve(process.argv[2] ?? resolve(desktopRoot, "qa-artifacts"));
+const ocrPrefix = "haksulsomoim-ocr-";
+const fixturePng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZgAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+type QaAction = Readonly<{ action: string; observed: string }>;
+
 await mkdir(evidenceDirectory, { recursive: true });
 await execFileAsync(
   resolve(desktopRoot, "node_modules/.bin/electron-vite"),
   ["build", "--mode", "qa", "--entry", "src/main/qa.ts"],
   { cwd: desktopRoot },
 );
+const ocrBefore = new Set((await readdir(tmpdir())).filter((name) => name.startsWith(ocrPrefix)));
 const userData = await mkdtemp(resolve(tmpdir(), "haksulsomoim-unresolved-tool-"));
 const unresolvedMarker = resolve(userData, "tool-entered");
+const actions: QaAction[] = [];
+let first: ElectronApplication | undefined;
+let second: ElectronApplication | undefined;
+let page: Page | undefined;
+let failure: unknown;
+let firstClosed = false;
+let secondClosed = false;
+let proof: Record<string, unknown> = {};
 
-type Authority = Readonly<{ caseId: string; contextDigest: string }>;
-
-async function launch(afterRestart: boolean) {
+function launch(afterRestart: boolean): Promise<ElectronApplication> {
   return electron.launch({
     args: [
       `--user-data-dir=${userData}`,
@@ -34,54 +49,6 @@ async function launch(afterRestart: boolean) {
     ],
     cwd: desktopRoot,
   });
-}
-
-async function pngFixture(page: Page): Promise<Buffer> {
-  const dataUrl = await page.evaluate(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1200;
-    canvas.height = 520;
-    const context = canvas.getContext("2d");
-    if (context === null) throw new Error("Canvas unavailable");
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#111";
-    context.font = "700 86px Arial";
-    context.fillText("5,380,000 KRW", 72, 245);
-    return canvas.toDataURL("image/png");
-  });
-  return Buffer.concat([
-    Buffer.from(dataUrl.split(",", 2)[1] ?? "", "base64"),
-    Buffer.from("HAKSUL_QA_FIXTURE_HAPPY"),
-  ]);
-}
-
-async function startUnresolvedTool(page: Page): Promise<Authority> {
-  await page.getByRole("heading", { name: /놓치기 쉬운 절차/ }).waitFor();
-  await page.getByLabel("피해금액").fill("5380000");
-  await page.getByRole("button", { name: "사건 시작" }).click();
-  await page.getByText("₩5,380,000").waitFor();
-  await page.locator("#evidence-file").setInputFiles({
-    name: "transfer-receipt.png",
-    mimeType: "image/png",
-    buffer: await pngFixture(page),
-  });
-  await page.getByText(/로컬 OCR 후보/).waitFor();
-  await page.getByRole("button", { name: "추출 내용 확인" }).click();
-  await page.locator('[data-testid^="citation-"]').waitFor();
-  const authority = await page.evaluate(async () => {
-    const caseId = localStorage.getItem("haksul.agent.active-case.v1");
-    if (caseId === null) throw new Error("Missing case binding");
-    const opened = await window.haksul.openAgentCase?.({ caseId });
-    if (opened === undefined) throw new Error("Missing Agent open boundary");
-    return { caseId, contextDigest: opened.contextDigest };
-  });
-  await page.getByLabel("민사 회수").click();
-  await page.getByLabel(/마스킹된 사건 컨텍스트 전송을 승인/).click();
-  await page.getByTestId("agent-start").click();
-  await page.locator('[data-agent-tool="inspect-masked-case"]').waitFor();
-  await page.locator('[data-agent-status="running"]').waitFor();
-  return authority;
 }
 
 function waitForToolEntry(): Promise<void> {
@@ -99,61 +66,197 @@ function waitForToolEntry(): Promise<void> {
   });
 }
 
-const first = await launch(false);
-let second: Awaited<ReturnType<typeof launch>> | undefined;
-let receipt: unknown;
-try {
-  const toolEntered = waitForToolEntry();
-  const authority = await startUnresolvedTool(await first.firstWindow());
-  await toolEntered;
-  const firstClosed = new Promise<void>((resolveClose) => first.once("close", resolveClose));
-  first.process().kill("SIGKILL");
-  await firstClosed;
-  second = await launch(true);
-  const page = await second.firstWindow();
-  await page.getByTestId("agent-workspace").waitFor();
-  receipt = await page.evaluate(async ({ caseId, contextDigest }) => {
-    let recoveryDenied = false;
-    try {
-      await window.haksul.listAgentRuns?.({ caseId });
-    } catch {
-      recoveryDenied = true;
-    }
-    let replacementDenied = false;
-    try {
-      await window.haksul.startAgentRun?.({
-        caseId,
-        contextDigest,
-        goal: { kind: "civil-recovery", caseId, objective: "prepare-civil-demand" },
-      });
-    } catch {
-      replacementDenied = true;
-    }
-    return { recoveryDenied, replacementDenied };
-  }, authority);
-  if (
-    typeof receipt !== "object" ||
-    receipt === null ||
-    !("recoveryDenied" in receipt) ||
-    receipt.recoveryDenied !== true ||
-    !("replacementDenied" in receipt) ||
-    receipt.replacementDenied !== true
-  ) {
-    throw new Error("Fresh Electron process did not retain unresolved-tool ownership");
-  }
-  await page.screenshot({
-    path: resolve(evidenceDirectory, "unresolved-tool-relaunch.png"),
-    fullPage: true,
+async function readyUnresolvedTool(currentPage: Page): Promise<void> {
+  currentPage.setDefaultTimeout(30_000);
+  await currentPage.getByRole("heading", { name: /놓치기 쉬운 절차/ }).waitFor();
+  await currentPage.getByLabel("피해금액").fill("5380000");
+  await currentPage.getByRole("button", { name: "사건 시작" }).click();
+  await currentPage.getByText("₩5,380,000").waitFor();
+  await currentPage.locator("#evidence-file").setInputFiles({
+    name: "transfer-receipt.png",
+    mimeType: "image/png",
+    buffer: Buffer.concat([fixturePng, Buffer.from("HAKSUL_QA_FIXTURE_HAPPY")]),
   });
-  await writeFile(
-    resolve(evidenceDirectory, "unresolved-tool-relaunch-receipt.json"),
-    `${JSON.stringify({ status: "PASS", ...receipt }, null, 2)}\n`,
-    { mode: 0o600 },
-  );
-  console.log(JSON.stringify({ status: "PASS", ...receipt }));
-} finally {
-  const process = second?.process();
-  if (second !== undefined && process?.exitCode === null && process.signalCode === null)
-    await second.close();
-  await rm(userData, { recursive: true, force: true });
+  await currentPage.getByText(/로컬 OCR 후보/).waitFor();
+  await currentPage.getByRole("button", { name: "추출 내용 확인" }).click();
+  await currentPage.locator('[data-testid^="citation-"]').waitFor();
+  await currentPage.getByLabel("민사 회수").click();
+  await currentPage.getByLabel(/마스킹된 사건 컨텍스트 전송을 승인/).click();
+  const toolEntered = waitForToolEntry();
+  const externalStarted = currentPage
+    .locator("[data-agent-step]")
+    .filter({ hasText: "공식 법령 검색 시작" })
+    .waitFor();
+  await currentPage.getByTestId("agent-start").click();
+  await Promise.all([externalStarted, toolEntered]);
+  if ((await currentPage.locator('[data-agent-tool="inspect-masked-case"]').count()) !== 1) {
+    throw new Error("Inspection checkpoint was not committed exactly once before external entry");
+  }
 }
+
+async function close(application: ElectronApplication | undefined): Promise<boolean> {
+  if (application === undefined) return true;
+  const process = application.process();
+  if (process.exitCode !== null || process.signalCode !== null) return true;
+  const closed = new Promise<void>((resolveClose) => application.once("close", resolveClose));
+  await application.close();
+  await closed;
+  return true;
+}
+
+async function pathIsAbsent(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return true;
+    throw error;
+  }
+}
+
+try {
+  first = await launch(false);
+  page = await first.firstWindow();
+  await readyUnresolvedTool(page);
+  actions.push({
+    action: "launch and start Agent through visible case, evidence, consent, and start controls",
+    observed:
+      "production renderer displayed the Korean workspace and timeline while the QA adapter entered once",
+  });
+  const firstPid = first.process().pid;
+  if (firstPid === undefined) throw new Error("First Electron process has no PID");
+  const firstExit = new Promise<void>((resolveClose) => first?.once("close", resolveClose));
+  first.process().kill("SIGKILL");
+  await firstExit;
+  firstClosed = true;
+  actions.push({
+    action: "hard-kill first Electron process",
+    observed: "the process exited during the externally executing tool without graceful settlement",
+  });
+
+  second = await launch(true);
+  const secondPid = second.process().pid;
+  if (secondPid === undefined || secondPid === firstPid)
+    throw new Error("Relaunch was not a new process");
+  page = await second.firstWindow();
+  page.setDefaultTimeout(30_000);
+  await page.getByRole("heading", { name: "중단된 Agent 실행" }).waitFor();
+  const workspace = page.locator('[data-agent-status="unresolved-tool"]');
+  await workspace.waitFor();
+  await page.locator('[data-agent-provider="authenticated"]').waitFor();
+  await page
+    .getByText(/이 사건의 Agent 실행이 안전하게 잠겨 있습니다/)
+    .first()
+    .waitFor();
+  const blockedStart = page.getByRole("button", { name: "안전 잠금으로 새 실행 차단" });
+  if (!(await blockedStart.isDisabled()))
+    throw new Error("Same-case replacement control was enabled");
+  actions.push({
+    action: "relaunch the same encrypted user-data in a second Electron process",
+    observed:
+      "renderer announced the case-specific unresolved-tool safety lock and blocked a new run",
+  });
+
+  const denied = page.getByTestId("agent-recovery-denied").waitFor();
+  await page.getByRole("button", { name: "중단된 실행 다시 확인" }).click();
+  await denied;
+  const entries = (await readFile(unresolvedMarker, "utf8")).trim().split(/\r?\n/u);
+  if (
+    entries.length !== 1 ||
+    entries[0] !== String(firstPid) ||
+    entries.includes(String(secondPid))
+  ) {
+    throw new Error(`Unexpected external tool entries: ${entries.join(",")}`);
+  }
+  actions.push({
+    action: "use the visible recovery recheck",
+    observed:
+      "renderer showed a fail-closed denial; no second-process external tool entry occurred",
+  });
+
+  const dimensions = await workspace.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  if (dimensions.clientWidth !== 478 || dimensions.scrollWidth > dimensions.clientWidth) {
+    throw new Error(
+      `Recovered Korean Agent workspace width is ${dimensions.clientWidth}/${dimensions.scrollWidth}`,
+    );
+  }
+  const screenshot = resolve(evidenceDirectory, "agent-unresolved-tool.png");
+  await page.getByTestId("agent-recovery-boundary").screenshot({ path: screenshot });
+  await chmod(screenshot, 0o600);
+  proof = {
+    firstPid,
+    secondPid,
+    crashSignal: "SIGKILL",
+    sameEncryptedUserData: true,
+    rendererStatus: "unresolved-tool",
+    recoveryRecheckDenied: true,
+    sameCaseNewRunBlocked: true,
+    externalToolEntries: entries.length,
+    duplicateExternalToolEntries: 0,
+    externalOverlap: false,
+    workspaceWidth: dimensions.clientWidth,
+  };
+} catch (error) {
+  failure = error;
+  if (page !== undefined) {
+    await page
+      .screenshot({
+        path: resolve(evidenceDirectory, "agent-unresolved-tool-failure.png"),
+        fullPage: true,
+      })
+      .catch(() => undefined);
+  }
+} finally {
+  secondClosed = await close(second).catch(() => false);
+  firstClosed = firstClosed || (await close(first).catch(() => false));
+  const ocrAfter = (await readdir(tmpdir())).filter(
+    (name) => name.startsWith(ocrPrefix) && !ocrBefore.has(name),
+  );
+  await rm(userData, { recursive: true, force: true });
+  const cleanup = {
+    electronClosed: firstClosed && secondClosed,
+    qaUserDataRemoved: await pathIsAbsent(userData),
+    ocrTempArtifacts: ocrAfter,
+  };
+  if (
+    (!cleanup.electronClosed ||
+      !cleanup.qaUserDataRemoved ||
+      cleanup.ocrTempArtifacts.length > 0) &&
+    failure === undefined
+  ) {
+    failure = new Error("Unresolved-tool QA cleanup did not complete");
+  }
+  const status = failure === undefined ? "PASS" : "FAIL";
+  const receipt = {
+    scenario: "agent-unresolved-tool",
+    status,
+    route: "main -> IPC -> production preload -> renderer -> runtime",
+    actions,
+    proof,
+    cleanup,
+    externalResources: { portsUsed: [], testServersUsed: [] },
+  };
+  await Promise.all([
+    writeFile(
+      resolve(evidenceDirectory, "desktop-agent-unresolved-tool-actions.json"),
+      `${JSON.stringify({ scenario: "agent-unresolved-tool", actions }, null, 2)}\n`,
+      { mode: 0o600 },
+    ),
+    writeFile(
+      resolve(evidenceDirectory, "desktop-agent-unresolved-tool-receipt.json"),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+      { mode: 0o600 },
+    ),
+    writeFile(
+      resolve(evidenceDirectory, "desktop-agent-unresolved-tool-cleanup.json"),
+      `${JSON.stringify(cleanup, null, 2)}\n`,
+      { mode: 0o600 },
+    ),
+  ]);
+  console.log(JSON.stringify(receipt));
+}
+
+if (failure !== undefined) throw failure;
