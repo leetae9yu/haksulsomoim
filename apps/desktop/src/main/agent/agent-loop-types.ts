@@ -38,6 +38,8 @@ export interface AgentLoopClock {
 export interface AgentLoopIdentifiers {
   nextRunId(): string;
   nextDecisionId(): string;
+  nextToolCallId(): string;
+  nextApprovalId(): string;
   nextStepId(): string;
 }
 

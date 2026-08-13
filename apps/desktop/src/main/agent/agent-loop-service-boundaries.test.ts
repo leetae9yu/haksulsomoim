@@ -173,11 +173,13 @@ describe("Agent loop context and availability boundaries", () => {
       approvedContextDigest: DIGEST_A,
     });
 
+    const approval = pending.steps.find((step) => step.kind === "approval-requested")?.approval;
+    if (approval === undefined) throw new Error("missing host approval request");
     const denied = await service.decideApproval({
       caseId: "case-1",
       runId: pending.runId,
-      approvalId: "approval-deny",
-      approvalDigest: DIGEST_B,
+      approvalId: approval.approvalId,
+      approvalDigest: approval.approvalDigest,
       outcome: "denied",
     });
 

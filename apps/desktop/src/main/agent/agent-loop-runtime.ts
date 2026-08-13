@@ -2,7 +2,7 @@ import { parseApprovedDecisionContext } from "../../integrations/agent-provider/
 import type { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
 import type { AgentRun } from "./agent-contracts";
 import { commitAgentRun } from "./agent-loop-checkpoints";
-import { toolResults } from "./agent-loop-decisions";
+import { type ToolCorrelationBinding, toolResults } from "./agent-loop-decisions";
 import { AgentLoopClockError, AgentLoopStateError } from "./agent-loop-errors";
 import type {
   AgentCaseProjection,
@@ -30,6 +30,7 @@ export type AgentLoopControl = {
   readonly runId: string;
   readonly approvedContextDigest: string;
   readonly citationIds: Set<string>;
+  readonly toolCorrelations: Map<string, ToolCorrelationBinding>;
   snapshot: AgentRunSnapshot;
   provider?: AgentLoopProvider;
   cancellation?: Promise<AgentRun>;
@@ -62,6 +63,7 @@ export function createAgentLoopControl(
     runId,
     approvedContextDigest,
     citationIds: new Set(citationIds),
+    toolCorrelations: new Map(),
     snapshot: { run, cursor: 0 },
     cancellationRequested,
     requestCancellation,

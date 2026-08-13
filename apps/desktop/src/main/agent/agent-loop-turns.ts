@@ -1,12 +1,11 @@
 import type { parseApprovedDecisionContext } from "../../integrations/agent-provider/agent-decision-contracts";
-import {
-  type AgentDecision,
-  type AgentRun,
-  type AgentToolCall,
-  agentDecisionSchema,
-} from "./agent-contracts";
+import { type AgentRun, type AgentToolCall, agentDecisionSchema } from "./agent-contracts";
 import { pauseAgentDecisionForContext, pauseIdleAgentRun } from "./agent-loop-boundary-reducer";
-import { classifyToolCall } from "./agent-loop-decisions";
+import {
+  classifyToolCall,
+  type ReboundAgentDecision,
+  resolveToolCorrelation,
+} from "./agent-loop-decisions";
 import { AgentToolPolicyError } from "./agent-loop-errors";
 import {
   beginAgentDecision,
@@ -99,52 +98,90 @@ export async function acceptAgentDecision(
   dependencies: AgentLoopRuntimeDependencies,
   control: AgentLoopControl,
   decisionId: string,
-  decision: AgentDecision | undefined,
+  rebound: ReboundAgentDecision | undefined,
 ): Promise<AcceptedAgentTurn> {
   return dependencies.mutations.run(control.caseId, async () => {
     const current = control.snapshot.run;
     if (current.state.kind !== "active") return { kind: "stop", run: current };
     const duration = remainingDuration(dependencies, control, current);
-    if (decision === undefined) {
+    if (rebound === undefined) {
       const run = policyFailure(dependencies, current, decisionId, duration);
       await commitControlRun(dependencies, control, run, true);
       return { kind: "stop", run };
     }
-    const safeDecision =
-      decision.kind === "tool"
+    let safeDecision =
+      rebound.decision.kind === "tool"
         ? agentDecisionSchema.parse({
-            ...decision,
-            toolCall: dependencies.tools.sanitize(control.caseId, decision.toolCall),
+            ...rebound.decision,
+            toolCall: dependencies.tools.sanitize(control.caseId, rebound.decision.toolCall),
           })
-        : decision;
+        : rebound.decision;
     const projection = await loadAgentProjection(dependencies, control.caseId);
     if (projection.contextDigest !== control.approvedContextDigest) {
       const run = pauseAgentDecisionForContext(
         current,
-        safeDecision,
+        decisionId,
         dependencies.identifiers.nextStepId(),
         duration,
       );
       await commitControlRun(dependencies, control, run, true);
       return { kind: "stop", run };
     }
-    const history =
-      safeDecision.kind === "tool" ? classifyToolCall(current, safeDecision.toolCall) : undefined;
     if (safeDecision.kind === "tool") {
+      if (rebound.toolCorrelation === undefined) {
+        const run = policyFailure(dependencies, current, decisionId, duration);
+        await commitControlRun(dependencies, control, run, true);
+        return { kind: "stop", run };
+      }
+      const resolution = resolveToolCorrelation(
+        control.toolCorrelations,
+        rebound.toolCorrelation,
+        safeDecision.toolCall,
+      );
+      if (resolution.kind === "collision") {
+        const run = policyFailure(dependencies, current, decisionId, duration);
+        await commitControlRun(dependencies, control, run, true);
+        return { kind: "stop", run };
+      }
+      safeDecision = agentDecisionSchema.parse({
+        ...safeDecision,
+        toolCall: resolution.call,
+      });
       try {
-        dependencies.tools.validate(safeDecision.toolCall, [
-          ...new Set([...projection.citationIds, ...control.citationIds]),
-        ]);
+        dependencies.tools.validate(
+          resolution.call,
+          [...control.citationIds],
+          current.steps.flatMap((step) =>
+            step.kind === "tool-finished" && step.result.outcome === "completed"
+              ? [step.result.observationDigest]
+              : [],
+          ),
+        );
       } catch (error) {
         if (!(error instanceof AgentToolPolicyError)) throw error;
         const run = policyFailure(dependencies, current, decisionId, duration);
         await commitControlRun(dependencies, control, run, true);
         return { kind: "stop", run };
       }
-      if (history?.kind === "collision") {
+      const history = classifyToolCall(current, resolution.call);
+      if (history.kind === "collision") {
         const run = policyFailure(dependencies, current, decisionId, duration);
         await commitControlRun(dependencies, control, run, true);
         return { kind: "stop", run };
+      }
+      if (resolution.kind === "new") {
+        control.toolCorrelations.set(rebound.toolCorrelation.key, resolution.binding);
+      }
+      if (history.kind === "duplicate-result") {
+        const reduction = recordAgentDecision(
+          current,
+          safeDecision,
+          dependencies.identifiers.nextStepId(),
+          dependencies.identifiers.nextStepId(),
+          duration,
+        );
+        await commitControlRun(dependencies, control, reduction.run, true);
+        return { kind: "continue", run: reduction.run };
       }
     }
     const reduction = recordAgentDecision(
@@ -156,7 +193,6 @@ export async function acceptAgentDecision(
     );
     await commitControlRun(dependencies, control, reduction.run, true);
     if (reduction.toolCall === undefined) return { kind: "stop", run: reduction.run };
-    if (history?.kind === "duplicate-result") return { kind: "continue", run: reduction.run };
     const started = beginAgentTool(
       reduction.run,
       decisionId,

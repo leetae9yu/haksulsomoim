@@ -116,6 +116,7 @@ export function createLoopHarness(
   const lawSearches: string[] = [];
   const lawDetails: string[] = [];
   const draftWrites: string[] = [];
+  const draftIdempotencyKeys: string[] = [];
   const defaultLaw: AgentOfficialLawTools = {
     async search(query) {
       lawSearches.push(query);
@@ -133,6 +134,8 @@ export function createLoopHarness(
   const law = options.law ?? defaultLaw;
   let runNumber = 0;
   let decisionNumber = 0;
+  let toolNumber = 0;
+  let approvalNumber = 0;
   let stepNumber = 0;
   const redactor = new Redactor(new Uint8Array(32).fill(4));
   const tools = new AgentToolRegistry({
@@ -141,6 +144,7 @@ export function createLoopHarness(
     drafts: {
       async write(input) {
         draftWrites.push(input.contentDigest);
+        draftIdempotencyKeys.push(input.idempotencyKey);
         return { status: "ok", artifactId: `artifact-${draftWrites.length}` };
       },
     },
@@ -155,8 +159,19 @@ export function createLoopHarness(
     identifiers: {
       nextRunId: () => `run-${++runNumber}`,
       nextDecisionId: () => `decision-${++decisionNumber}`,
+      nextToolCallId: () => `tool-${++toolNumber}`,
+      nextApprovalId: () => `approval-${++approvalNumber}`,
       nextStepId: () => `step-${++stepNumber}`,
     },
   });
-  return { clock, draftWrites, lawDetails, lawSearches, projection, runs, service };
+  return {
+    clock,
+    draftIdempotencyKeys,
+    draftWrites,
+    lawDetails,
+    lawSearches,
+    projection,
+    runs,
+    service,
+  };
 }

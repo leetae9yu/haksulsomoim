@@ -102,6 +102,8 @@ describe("Agent loop encrypted checkpoint integration", () => {
       },
     });
     let decisionNumber = 0;
+    let toolNumber = 0;
+    let approvalNumber = 0;
     let stepNumber = 0;
     const service = new AgentLoopService({
       runs,
@@ -113,6 +115,8 @@ describe("Agent loop encrypted checkpoint integration", () => {
       identifiers: {
         nextRunId: () => "private-run",
         nextDecisionId: () => `decision-${++decisionNumber}`,
+        nextToolCallId: () => `tool-${++toolNumber}`,
+        nextApprovalId: () => `approval-${++approvalNumber}`,
         nextStepId: () => `step-${++stepNumber}`,
       },
     });

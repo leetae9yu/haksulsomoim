@@ -1,7 +1,7 @@
 import {
-  type AgentDecision,
   type AgentRun,
   type ApprovalDecision,
+  agentDecisionSchema,
   agentRunSchema,
 } from "./agent-contracts";
 
@@ -23,10 +23,15 @@ export function pauseIdleAgentRun(
 
 export function pauseAgentDecisionForContext(
   run: AgentRun,
-  decision: AgentDecision,
+  decisionId: string,
   stepId: string,
   durationMsRemaining: number,
 ): AgentRun {
+  const decision = agentDecisionSchema.parse({
+    kind: "finish",
+    decisionId,
+    outcome: { kind: "failed-policy", reason: "context-changed" },
+  });
   return agentRunSchema.parse({
     ...run,
     budget: {

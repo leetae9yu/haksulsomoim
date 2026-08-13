@@ -83,18 +83,26 @@ export class AgentToolRegistry {
     });
   }
 
-  validate(call: AgentToolCall, approvedCitationIds: readonly string[]): void {
+  validate(
+    call: AgentToolCall,
+    approvedCitationIds: readonly string[],
+    approvedObservationDigests: readonly string[] = [],
+  ): void {
     switch (call.toolName) {
       case "inspect-masked-case":
       case "search-official-law":
       case "compute-evidence-gaps":
-      case "write-local-draft":
       case "request-user-input":
       case "request-user-action":
         return;
       case "read-official-law-detail":
         if (!approvedCitationIds.includes(call.citationId)) {
           throw new AgentToolPolicyError("Official-law detail requires a cited result");
+        }
+        return;
+      case "write-local-draft":
+        if (!approvedObservationDigests.includes(call.contentDigest)) {
+          throw new AgentToolPolicyError("Local drafts require a completed observation");
         }
         return;
     }

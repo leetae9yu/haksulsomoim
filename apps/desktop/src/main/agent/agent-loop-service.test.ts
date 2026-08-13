@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHostCompletionDigest } from "./agent-loop-decisions";
 import {
   civilGoal,
   createLoopHarness,
@@ -47,7 +48,12 @@ describe("host-owned bounded Agent loop", () => {
     if (run.state.kind !== "terminal" || run.state.outcome.kind !== "completed") {
       throw new Error("expected a completed Agent run");
     }
-    expect(String(run.state.outcome.summaryDigest)).toBe(DIGEST_C);
+    expect(String(run.state.outcome.summaryDigest)).toBe(
+      createHostCompletionDigest(
+        run.steps.flatMap((step) => (step.kind === "tool-finished" ? [step.result] : [])),
+      ),
+    );
+    expect(String(run.state.outcome.summaryDigest)).not.toBe(DIGEST_C);
     expect(provider.inputs).toHaveLength(3);
     const results = run.steps.flatMap((step) =>
       step.kind === "tool-finished" ? [step.result] : [],
@@ -69,7 +75,7 @@ describe("host-owned bounded Agent loop", () => {
     expect(persisted.cursor).toBe(run.steps.length);
     const firstResultSave = runs.saves.find((snapshot) =>
       snapshot.run.steps.some(
-        (step) => step.kind === "tool-finished" && step.result.toolCallId === "inspect-1",
+        (step) => step.kind === "tool-finished" && step.result.toolCallId === "tool-1",
       ),
     );
     expect(firstResultSave).toBeDefined();

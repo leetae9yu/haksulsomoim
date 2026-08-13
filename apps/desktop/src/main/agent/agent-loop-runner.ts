@@ -1,5 +1,5 @@
 import type { AgentRun } from "./agent-contracts";
-import { parseAndRebindAgentDecision } from "./agent-loop-decisions";
+import { createHostCompletionDigest, parseAndRebindAgentDecision } from "./agent-loop-decisions";
 import { AgentLoopStateError } from "./agent-loop-errors";
 import {
   type AgentLoopControl,
@@ -88,7 +88,12 @@ export class AgentLoopRunner {
       }
       const decision = parseAndRebindAgentDecision(
         turn.raw,
-        prepared.decisionId,
+        {
+          decisionId: prepared.decisionId,
+          toolCallId: this.#dependencies.identifiers.nextToolCallId(),
+          approvalId: this.#dependencies.identifiers.nextApprovalId(),
+          completionDigest: createHostCompletionDigest(prepared.context.observations),
+        },
         this.#control.caseId,
         this.#control.approvedContextDigest,
       );
