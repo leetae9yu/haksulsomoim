@@ -87,7 +87,7 @@ function quarantinePath(error: AgentRepositoryKeyCleanupError): string {
   return error.quarantinePath;
 }
 
-async function replaceBeforeRename(kind: "directory" | "file" | "symlink"): Promise<void> {
+async function replaceBeforeCapture(kind: "directory" | "file" | "symlink"): Promise<void> {
   const current = await fixture(kind);
   if (kind === "directory") {
     await mkdir(current.staged, { mode: 0o700 });
@@ -103,27 +103,33 @@ async function replaceBeforeRename(kind: "directory" | "file" | "symlink"): Prom
   const error = await cleanupFailure(
     cleanupAgentRepositoryKeyTemporary(current.source, current.identity, {
       checkpoint: async (checkpoint: AgentRepositoryKeyCleanupCheckpoint) => {
-        if (checkpoint.phase !== "before-quarantine-rename") return;
+        if (checkpoint.phase !== "before-entry-capture") return;
         await rename(current.source, current.moved);
         await rename(current.staged, current.source);
       },
     }),
   );
   const quarantined = quarantinePath(error);
-  const preserved = await lstat(quarantined);
 
   expect(error.code).toBe("AGENT_REPOSITORY_KEY_MARKER_CLEANUP_FAILED");
-  expect({ dev: preserved.dev, ino: preserved.ino }).toEqual({
-    dev: attacker.dev,
-    ino: attacker.ino,
-  });
   expect(await readFile(current.moved, "utf8")).toBe(`owned-${kind}`);
   expect(relative(current.repository, quarantined).startsWith("..")).toBe(true);
   if (kind === "directory") {
-    expect(await readFile(join(quarantined, "payload"), "utf8")).toBe("attacker-directory");
+    expect(await exists(quarantined)).toBe(false);
+    expect(await readFile(join(current.source, "payload"), "utf8")).toBe("attacker-directory");
   } else if (kind === "symlink") {
+    const preserved = await lstat(quarantined);
+    expect({ dev: preserved.dev, ino: preserved.ino }).toEqual({
+      dev: attacker.dev,
+      ino: attacker.ino,
+    });
     expect(await readlink(quarantined)).toBe(join(current.parent, "attacker-target"));
   } else {
+    const preserved = await lstat(quarantined);
+    expect({ dev: preserved.dev, ino: preserved.ino }).toEqual({
+      dev: attacker.dev,
+      ino: attacker.ino,
+    });
     expect(await readFile(quarantined, "utf8")).toBe("attacker-file");
   }
 }
@@ -136,12 +142,12 @@ afterEach(async () => {
 
 describe("Agent repository key cleanup adversarial substitutions", () => {
   for (const kind of replacementKinds) {
-    test(`quarantines a ${kind} replacement swapped before atomic rename`, async () => {
-      await replaceBeforeRename(kind);
+    test(`quarantines a ${kind} replacement swapped before atomic capture`, async () => {
+      await replaceBeforeCapture(kind);
     });
   }
 
-  test("preserves an attacker that replaces the quarantined entry after rename", async () => {
+  test("preserves an attacker that replaces the quarantined entry after capture", async () => {
     const current = await fixture("quarantine-swap");
     await writeFile(current.staged, "attacker-quarantine", { mode: 0o600 });
     const attacker = await lstat(current.staged);
@@ -165,12 +171,12 @@ describe("Agent repository key cleanup adversarial substitutions", () => {
     expect(await readFile(current.moved, "utf8")).toBe("owned-quarantine-swap");
   });
 
-  test("fails closed when the owned source is moved away before rename", async () => {
+  test("fails closed when the owned source is moved away before capture", async () => {
     const current = await fixture("missing-source");
     const error = await cleanupFailure(
       cleanupAgentRepositoryKeyTemporary(current.source, current.identity, {
         checkpoint: async (checkpoint) => {
-          if (checkpoint.phase === "before-quarantine-rename") {
+          if (checkpoint.phase === "before-entry-capture") {
             await rename(current.source, current.moved);
           }
         },
@@ -189,7 +195,7 @@ describe("Agent repository key cleanup adversarial substitutions", () => {
     const error = await cleanupFailure(
       cleanupAgentRepositoryKeyTemporary(current.source, current.identity, {
         checkpoint: async (checkpoint) => {
-          if (checkpoint.phase !== "before-quarantine-rename") return;
+          if (checkpoint.phase !== "before-entry-capture") return;
           attackerPath = checkpoint.quarantinePath;
           await writeFile(attackerPath, "attacker-preexisting", { mode: 0o600 });
         },
