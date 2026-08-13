@@ -10,7 +10,16 @@ const SENSITIVE_TEXT = [
   /\bsk-[A-Za-z0-9_-]{16,}\b/u,
 ];
 
-export function hasSensitiveAgentText(run: AgentRun): boolean {
+export class AgentRunInvariantError extends Error {
+  readonly code = "AGENT_RUN_INVARIANT";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRunInvariantError";
+  }
+}
+
+function hasSensitiveAgentText(run: AgentRun): boolean {
   for (const step of run.steps) {
     const call =
       step.kind === "decision-recorded" && step.decision.kind === "tool"
@@ -26,4 +35,10 @@ export function hasSensitiveAgentText(run: AgentRun): boolean {
     }
   }
   return false;
+}
+
+export function assertSafeAgentText(run: AgentRun): void {
+  if (hasSensitiveAgentText(run)) {
+    throw new AgentRunInvariantError("Persisted Agent text must be redacted");
+  }
 }

@@ -87,10 +87,11 @@ export class AgentRunCaseOwnership {
       return undefined;
     }
     this.#assertCase(snapshot.run, caseId);
+    const locator = await this.#runs.locator(runId);
     const recovered =
       snapshot.run.state.kind === "active"
         ? {
-            run: interruptAgentRunForRestart(snapshot.run, this.#runs.locator(runId)),
+            run: interruptAgentRunForRestart(snapshot.run, locator),
             cursor: snapshot.cursor,
           }
         : snapshot;

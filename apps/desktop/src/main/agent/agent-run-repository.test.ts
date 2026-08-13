@@ -54,8 +54,13 @@ describe("encrypted Agent run repository", () => {
       cursor: 2,
     });
     const names = await readdir(root);
-    expect(names).toHaveLength(2);
-    expect(names.every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name))).toBe(true);
+    expect(names).toHaveLength(3);
+    expect(names).toContain(".agent-repository-key");
+    expect(
+      names
+        .filter((name) => name !== ".agent-repository-key")
+        .every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name)),
+    ).toBe(true);
     for (const name of names) {
       const path = join(root, name);
       const bytes = await readFile(path, "utf8");
@@ -132,8 +137,13 @@ describe("encrypted Agent run repository", () => {
 
     await expect(repository.create(initial)).rejects.toThrow("already exists");
     const names = await readdir(root);
-    expect(names).toHaveLength(2);
-    expect(names.every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name))).toBe(true);
+    expect(names).toHaveLength(3);
+    expect(names).toContain(".agent-repository-key");
+    expect(
+      names
+        .filter((name) => name !== ".agent-repository-key")
+        .every((name) => /^[a-f0-9]{64}\.(?:claim|json)$/u.test(name)),
+    ).toBe(true);
   });
 
   test("rejects plaintext, corrupt records, and duplicate publication", async () => {

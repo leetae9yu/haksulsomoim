@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { link, open, readFile, realpath, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { agentRunSchema } from "./agent-contracts";
+import { AgentRepositoryKeyVerifier } from "./agent-run-repository-key";
 
 const snapshotSchema = z
   .strictObject({
@@ -72,13 +73,24 @@ export class ConcurrentAgentRunSaveError extends Error {
 export class EncryptedAgentRunRecordStore {
   readonly #directory: string;
   readonly #key: Uint8Array;
+  readonly #verifier: AgentRepositoryKeyVerifier;
 
-  constructor(directory: string, key: Uint8Array) {
+  constructor(
+    directory: string,
+    key: Uint8Array,
+    verifier = new AgentRepositoryKeyVerifier(directory, key),
+  ) {
     this.#directory = directory;
     this.#key = Uint8Array.from(key);
+    this.#verifier = verifier;
   }
 
-  locator(runId: string): string {
+  async locator(runId: string): Promise<string> {
+    await this.#verifier.verify();
+    return this.#locator(runId);
+  }
+
+  #locator(runId: string): string {
     return createHmac("sha256", this.#key)
       .update("haksulsomoim:agent-run:v1\0")
       .update(runId)
@@ -86,7 +98,8 @@ export class EncryptedAgentRunRecordStore {
   }
 
   async read(runId: string): Promise<AgentRunSnapshot> {
-    const locator = this.locator(runId);
+    await this.#verifier.verify();
+    const locator = this.#locator(runId);
     let serialized: string;
     try {
       serialized = await readFile(join(this.#directory, `${locator}.json`), "utf8");
@@ -117,8 +130,8 @@ export class EncryptedAgentRunRecordStore {
     expected?: AgentRunSnapshot,
   ): Promise<void> {
     const parsed = snapshotSchema.parse(snapshot);
-    await mkdir(this.#directory, { recursive: true, mode: 0o700 });
-    const locator = this.locator(parsed.run.runId);
+    await this.#verifier.verify();
+    const locator = this.#locator(parsed.run.runId);
     const lockKey = `${await realpath(this.#directory)}\0${locator}`;
     await this.#serialize(lockKey, async () => {
       if (expected && !same(await this.read(parsed.run.runId), expected)) {

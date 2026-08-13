@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { link, open, readFile, realpath, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { agentRunIdSchema, caseIdSchema } from "./agent-contracts-core";
+import { AgentRepositoryKeyVerifier } from "./agent-run-repository-key";
 
 const claimSchema = z
   .strictObject({
@@ -45,10 +46,16 @@ export class AgentCaseClaimInvariantError extends Error {
 export class EncryptedAgentCaseClaimStore {
   readonly #directory: string;
   readonly #key: Uint8Array;
+  readonly #verifier: AgentRepositoryKeyVerifier;
 
-  constructor(directory: string, key: Uint8Array) {
+  constructor(
+    directory: string,
+    key: Uint8Array,
+    verifier = new AgentRepositoryKeyVerifier(directory, key),
+  ) {
     this.#directory = directory;
     this.#key = Uint8Array.from(key);
+    this.#verifier = verifier;
   }
 
   async acquire(caseId: string, runId: string): Promise<void> {
@@ -89,7 +96,7 @@ export class EncryptedAgentCaseClaimStore {
   }
 
   async #withCase<T>(caseId: string, operation: (locator: string) => Promise<T>): Promise<T> {
-    await mkdir(this.#directory, { recursive: true, mode: 0o700 });
+    await this.#verifier.verify();
     const locator = this.#locator(caseId);
     const lockKey = `${await realpath(this.#directory)}\0${locator}`;
     const previous = claimTails.get(lockKey) ?? Promise.resolve();

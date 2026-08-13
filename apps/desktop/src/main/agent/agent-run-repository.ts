@@ -2,39 +2,30 @@ import type { AgentRun, AgentStep } from "./agent-contracts";
 import { agentRunSchema } from "./agent-contracts";
 import { EncryptedAgentCaseClaimStore } from "./agent-run-case-claim";
 import { AgentRunCaseOwnership, interruptAgentRunForRestart } from "./agent-run-case-ownership";
+import { AgentRepositoryKeyVerifier } from "./agent-run-repository-key";
 import { type AgentRunSnapshot, EncryptedAgentRunRecordStore } from "./agent-run-repository-record";
-import { hasSensitiveAgentText } from "./agent-run-repository-safety";
+import { AgentRunInvariantError, assertSafeAgentText } from "./agent-run-repository-safety";
 
 export { AgentCaseAlreadyClaimedError, AgentCaseClaimInvariantError } from "./agent-run-case-claim";
+export {
+  AgentRepositoryKeyMarkerError,
+  AgentRepositoryKeyMismatchError,
+} from "./agent-run-repository-key";
 export {
   AgentRunAlreadyExistsError,
   AgentRunNotFoundError,
   type AgentRunSnapshot,
   ConcurrentAgentRunSaveError,
 } from "./agent-run-repository-record";
+export { AgentRunInvariantError } from "./agent-run-repository-safety";
 
 export interface AgentRunRepositoryOptions {
   readonly directory: string;
   readonly encryptionKey: Uint8Array;
 }
 
-export class AgentRunInvariantError extends Error {
-  readonly code = "AGENT_RUN_INVARIANT";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "AgentRunInvariantError";
-  }
-}
-
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function assertSafeText(run: AgentRun): void {
-  if (hasSensitiveAgentText(run)) {
-    throw new AgentRunInvariantError("Persisted Agent text must be redacted");
-  }
 }
 
 function assertUniqueHistory(steps: readonly AgentStep[]): void {
@@ -166,16 +157,21 @@ export class AgentRunRepository {
     if (options.encryptionKey.byteLength !== 32) {
       throw new RangeError("AES-256-GCM requires a 32-byte encryption key");
     }
-    this.#store = new EncryptedAgentRunRecordStore(options.directory, options.encryptionKey);
+    const verifier = new AgentRepositoryKeyVerifier(options.directory, options.encryptionKey);
+    this.#store = new EncryptedAgentRunRecordStore(
+      options.directory,
+      options.encryptionKey,
+      verifier,
+    );
     this.#ownership = new AgentRunCaseOwnership(
       this.#store,
-      new EncryptedAgentCaseClaimStore(options.directory, options.encryptionKey),
+      new EncryptedAgentCaseClaimStore(options.directory, options.encryptionKey, verifier),
     );
   }
 
   async create(run: AgentRun): Promise<void> {
     const parsed = agentRunSchema.parse(run);
-    assertSafeText(parsed);
+    assertSafeAgentText(parsed);
     assertUniqueHistory(parsed.steps);
     if (parsed.state.kind === "active") {
       await this.#ownership.create(parsed);
@@ -189,7 +185,7 @@ export class AgentRunRepository {
     if (parsed.state.kind !== "active") {
       throw new AgentRunInvariantError("Only active Agent runs may acquire a case claim");
     }
-    assertSafeText(parsed);
+    assertSafeAgentText(parsed);
     assertUniqueHistory(parsed.steps);
     await this.#ownership.create(parsed);
   }
@@ -214,7 +210,7 @@ export class AgentRunRepository {
   async load(runId: string): Promise<AgentRunSnapshot> {
     if (runId.length === 0) throw new TypeError("An Agent run ID is required");
     const snapshot = await this.#store.read(runId);
-    assertSafeText(snapshot.run);
+    assertSafeAgentText(snapshot.run);
     assertUniqueHistory(snapshot.run.steps);
     if (snapshot.run.state.kind !== "active") {
       await this.#ownership.release(snapshot.run.caseId, runId);
@@ -222,7 +218,7 @@ export class AgentRunRepository {
     }
     if (!hasInFlight(snapshot.run.steps.slice(snapshot.cursor))) return snapshot;
     const recovered = {
-      run: interruptAgentRunForRestart(snapshot.run, this.#store.locator(runId)),
+      run: interruptAgentRunForRestart(snapshot.run, await this.#store.locator(runId)),
       cursor: snapshot.cursor,
     };
     await this.#store.write(recovered, false, snapshot);
@@ -239,7 +235,7 @@ export class AgentRunRepository {
     if (same(existing, candidate)) return;
     assertImmutable(existing, candidate);
     if (isIdempotentResultRetry(existing, candidate)) return;
-    assertSafeText(candidate.run);
+    assertSafeAgentText(candidate.run);
     assertUniqueHistory(candidate.run.steps);
     await this.#store.write(candidate, false, existing);
   }
