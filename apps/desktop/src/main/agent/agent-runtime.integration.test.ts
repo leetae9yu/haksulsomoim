@@ -42,9 +42,6 @@ function provider(
     startChatGptLogin: async () => {
       throw new Error("unused");
     },
-    suggest: async () => {
-      throw new Error("unused");
-    },
     dispose: async () => undefined,
   } as unknown as CodexAgentDecisionProvider;
 }

@@ -44,9 +44,6 @@ describe("Agent runtime initialization ownership", () => {
       startChatGptLogin: async () => {
         throw new Error("unused");
       },
-      suggest: async () => {
-        throw new Error("unused");
-      },
       async dispose() {
         providerCloseCalls += 1;
         providerClosed = true;

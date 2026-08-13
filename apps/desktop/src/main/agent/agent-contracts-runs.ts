@@ -21,6 +21,7 @@ const pausedRunStateSchema = z
     reason: z.union([
       z.literal("approval-required"),
       z.literal("provider-unavailable"),
+      z.literal("tool-unavailable"),
       z.literal("context-changed"),
       z.literal("user-paused"),
     ]),

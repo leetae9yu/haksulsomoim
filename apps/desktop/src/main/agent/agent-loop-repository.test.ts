@@ -35,6 +35,10 @@ class ObservedRunStore implements AgentRunStore {
     return this.#repository.createOwned(run);
   }
 
+  quarantineOwned(caseId: string, runId: string): Promise<void> {
+    return this.#repository.quarantineOwned(caseId, runId);
+  }
+
   releaseOwned(caseId: string, runId: string): Promise<void> {
     return this.#repository.releaseOwned(caseId, runId);
   }

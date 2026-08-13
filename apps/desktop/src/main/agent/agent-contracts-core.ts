@@ -99,6 +99,7 @@ export const interruptionSchema = z
     kind: z.union([
       z.literal("user-cancelled"),
       z.literal("provider-timeout"),
+      z.literal("tool-timeout"),
       z.literal("application-restarted"),
       z.literal("user-paused"),
     ]),

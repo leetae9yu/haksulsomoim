@@ -7,6 +7,7 @@ import type { RuntimeCaseRepository } from "../runtime-case-types";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
 import type { AgentCaseProjectionReader, AgentLoopClock } from "./agent-loop-types";
 import type { AgentRunRepository } from "./agent-run-repository";
+import type { AgentExecutionTimer } from "./agent-tool-execution";
 import {
   type AgentEncryptedDraftWriter,
   type AgentOfficialLawResult,
@@ -91,18 +92,21 @@ export function createAgentLoopDependencies(
     drafts: AgentEncryptedDraftWriter;
     mutations: RuntimeCaseMutationQueue;
     clock?: AgentLoopClock;
+    timer?: AgentExecutionTimer;
+    toolTimeoutMs?: number;
+    toolSettlementGraceMs?: number;
   }>,
 ): AgentLoopRuntimeDependencies {
   const projections = createAgentProjectionReader(input.cases, input.redactor);
   const id = (prefix: string) => `${prefix}_${randomBytes(12).toString("hex")}`;
   const tools = new AgentToolRegistry({
     law: {
-      async search(query) {
-        return lawResult(await input.external.law.execute("search_law", { query }));
+      async search(query, context) {
+        return lawResult(await input.external.law.execute("search_law", { query }, context));
       },
-      async detail(citationId) {
+      async detail(citationId, context) {
         return lawResult(
-          await input.external.law.execute("get_law_text", { citation_id: citationId }),
+          await input.external.law.execute("get_law_text", { citation_id: citationId }, context),
         );
       },
     },
@@ -116,6 +120,11 @@ export function createAgentLoopDependencies(
     tools,
     mutations: input.mutations,
     clock: input.clock ?? { now: () => performance.now() },
+    ...(input.timer === undefined ? {} : { timer: input.timer }),
+    ...(input.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: input.toolTimeoutMs }),
+    ...(input.toolSettlementGraceMs === undefined
+      ? {}
+      : { toolSettlementGraceMs: input.toolSettlementGraceMs }),
     identifiers: {
       nextRunId: () => id("run"),
       nextDecisionId: () => id("decision"),

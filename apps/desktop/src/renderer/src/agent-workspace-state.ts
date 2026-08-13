@@ -51,7 +51,11 @@ export function agentUiStatus(
     if (projection.pendingApproval !== null || projection.state.reason === "approval-required") {
       return "awaiting-approval";
     }
-    if (projection.state.reason === "provider-unavailable") return "manual";
+    if (
+      projection.state.reason === "provider-unavailable" ||
+      projection.state.reason === "tool-unavailable"
+    )
+      return "manual";
     if (projection.state.reason === "context-changed") return "consent-required";
     return "paused";
   }

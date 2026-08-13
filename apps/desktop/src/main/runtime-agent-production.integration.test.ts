@@ -51,9 +51,6 @@ describe("production Agent handler runtime", () => {
       startChatGptLogin: async () => {
         throw new Error("unused");
       },
-      suggest: async () => {
-        throw new Error("unused");
-      },
       dispose: async () => undefined,
     } as unknown as CodexAgentProvider;
     const runtime = await createDesktopRuntime(root, {

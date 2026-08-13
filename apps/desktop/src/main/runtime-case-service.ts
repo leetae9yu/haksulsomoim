@@ -12,10 +12,7 @@ import {
   enforcementChoices,
   parseCaseInput,
 } from "../domain/case-workflow";
-import {
-  type CodexAgentProvider,
-  createUserApprovedSuggestionInput,
-} from "../integrations/agent-provider/agent-provider";
+import type { CodexAgentProvider } from "../integrations/agent-provider/agent-provider";
 import type { KoreanLawMcpAdapter } from "../integrations/korean-law-mcp/korean-law-mcp";
 import type { LocalOcrResult } from "../ocr/local-ocr";
 import type { Redactor } from "../security/redaction";
@@ -222,31 +219,6 @@ export class CaseRuntimeService {
 
   async codexLogin() {
     return (await this.#dependencies.provider()).startChatGptLogin();
-  }
-
-  async suggest(
-    input: Readonly<{
-      caseId: string;
-      approval: "user-approved";
-      citationIds: readonly string[];
-    }>,
-  ) {
-    const dossier = await this.#dependencies.repository.read(input.caseId);
-    const retrieved = new Set(dossier.retrievedCitations.map((citation) => citation.citationId));
-    if (input.citationIds.some((citationId) => !retrieved.has(citationId))) {
-      throw new Error("Every citation ID must have been retrieved for this case");
-    }
-    const summary = [
-      { id: "amount-krw", text: `amountKrw: ${dossier.amountKrw}` },
-      { id: "criminal-state", text: `criminalState: ${dossier.workflow.criminalState}` },
-      { id: "civil-state", text: `civilState: ${dossier.workflow.civilState}` },
-    ] as const;
-    const maskedFacts = summary.map((fact) => ({
-      id: fact.id,
-      text: this.#dependencies.redactor.redact(input.caseId, fact.text),
-    }));
-    const approved = createUserApprovedSuggestionInput(maskedFacts, input.citationIds);
-    return (await this.#dependencies.provider()).suggest(approved);
   }
 
   async #transition(

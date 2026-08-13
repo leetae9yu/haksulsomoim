@@ -8,7 +8,9 @@ import {
   StdioClientTransport,
   type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { AgentToolExecutionContext } from "../../main/agent/agent-tool-execution";
 import { parseKoreanLawCitations } from "./citation-parser";
 
 export const ALLOWED_KOREAN_LAW_TOOLS = [
@@ -33,7 +35,10 @@ export interface KoreanLawMcpLaunchOptions {
 export interface KoreanLawMcpClient {
   connect(transport: unknown): Promise<void>;
   listTools(): Promise<unknown>;
-  callTool(request: { name: string; arguments?: Record<string, unknown> }): Promise<unknown>;
+  callTool(
+    request: { name: string; arguments?: Record<string, unknown> },
+    options?: RequestOptions,
+  ): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -66,7 +71,11 @@ export type KoreanLawMcpResult =
 export interface KoreanLawMcpAdapter {
   tools(): readonly KoreanLawToolName[];
   discover(): Promise<readonly KoreanLawToolName[]>;
-  execute(tool: string, arguments_: Record<string, unknown>): Promise<KoreanLawMcpResult>;
+  execute(
+    tool: string,
+    arguments_: Record<string, unknown>,
+    context?: AgentToolExecutionContext,
+  ): Promise<KoreanLawMcpResult>;
   close(): Promise<void>;
 }
 
@@ -93,7 +102,7 @@ function defaultClientFactory(): KoreanLawMcpClient {
   return {
     connect: (transport) => client.connect(transport as Transport),
     listTools: () => client.listTools(),
-    callTool: (request) => client.callTool(request),
+    callTool: (request, options) => client.callTool(request, undefined, options),
     close: () => client.close(),
   };
 }
@@ -184,7 +193,8 @@ export function createKoreanLawMcpAdapter(
       }
     },
 
-    async execute(tool, arguments_) {
+    async execute(tool, arguments_, context) {
+      context?.signal.throwIfAborted();
       if (!ALLOWED_TOOL_NAMES.has(tool)) {
         return { ok: false, error: { code: "tool_not_allowed", tool: "[REJECTED]" } };
       }
@@ -199,10 +209,18 @@ export function createKoreanLawMcpAdapter(
       try {
         await connect();
         logger?.("Calling Korean law MCP tool", { tool: toolName });
-        const rawResult = await (client as KoreanLawMcpClient).callTool({
-          name: toolName,
-          arguments: arguments_,
-        });
+        const requestOptions =
+          context === undefined
+            ? undefined
+            : {
+                signal: context.signal,
+                timeout: Math.max(1, context.deadline - Date.now()),
+                maxTotalTimeout: Math.max(1, context.deadline - Date.now()),
+              };
+        const rawResult = await (client as KoreanLawMcpClient).callTool(
+          { name: toolName, arguments: arguments_ },
+          requestOptions,
+        );
         const normalizedResult = isObject(rawResult) ? rawResult : { content: rawResult };
         const resultDigest = createHash("sha256").update(JSON.stringify(rawResult)).digest("hex");
         const value: KoreanLawToolValue = {
@@ -219,7 +237,8 @@ export function createKoreanLawMcpAdapter(
         }
 
         return { ok: true, value };
-      } catch {
+      } catch (error) {
+        if (context?.signal.aborted) throw error;
         return {
           ok: false,
           error: {

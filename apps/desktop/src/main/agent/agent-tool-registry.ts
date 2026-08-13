@@ -1,4 +1,3 @@
-import type { KoreanLawCitation } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import type { RedactedText } from "../../security/redaction";
 import {
   type AgentCitationProvenance,
@@ -9,38 +8,21 @@ import {
 } from "./agent-contracts";
 import { AgentToolPolicyError } from "./agent-loop-errors";
 import type { AgentCaseProjection } from "./agent-loop-types";
+import type { AgentToolExecutionContext } from "./agent-tool-execution";
+import type {
+  AgentEncryptedDraftWriter,
+  AgentOfficialLawResult,
+  AgentOfficialLawTools,
+} from "./agent-tool-ports";
+
+export type {
+  AgentDraftWriteResult,
+  AgentEncryptedDraftWriter,
+  AgentOfficialLawResult,
+  AgentOfficialLawTools,
+} from "./agent-tool-ports";
+
 import { type PreparedAgentObservation, prepareAgentObservation } from "./agent-tool-observation";
-
-export type AgentOfficialLawResult =
-  | Readonly<{
-      status: "ok";
-      content: unknown;
-      citationIds: readonly string[];
-      citations: readonly KoreanLawCitation[];
-    }>
-  | Readonly<{ status: "unavailable"; reason: "credentials" | "mcp-unavailable" }>;
-
-export interface AgentOfficialLawTools {
-  search(query: string): Promise<AgentOfficialLawResult>;
-  detail(citationId: string): Promise<AgentOfficialLawResult>;
-}
-
-export type AgentDraftWriteResult =
-  | Readonly<{ status: "ok"; artifactId: string }>
-  | Readonly<{ status: "unavailable"; reason: "writer-unavailable" }>;
-
-export interface AgentEncryptedDraftWriter {
-  write(
-    input: Readonly<{
-      caseId: string;
-      artifactKind: "civil-demand" | "criminal-complaint";
-      contentDigest: string;
-      idempotencyKey: string;
-      maskedFacts: AgentCaseProjection["maskedFacts"];
-      citationIds: readonly string[];
-    }>,
-  ): Promise<AgentDraftWriteResult>;
-}
 
 export type AgentToolExecution = Readonly<{
   status: "completed" | "pending" | "unavailable";
@@ -169,7 +151,9 @@ export class AgentToolRegistry {
     call: AgentToolCall,
     projection: AgentCaseProjection,
     sourceCitationIds: readonly string[] = [],
+    context: AgentToolExecutionContext,
   ): Promise<AgentToolExecution> {
+    context.signal.throwIfAborted();
     switch (call.toolName) {
       case "inspect-masked-case":
         return {
@@ -183,9 +167,9 @@ export class AgentToolRegistry {
           citationIds: [],
         };
       case "search-official-law":
-        return this.#searchLaw(caseId, call.query);
+        return this.#searchLaw(caseId, call.query, context);
       case "read-official-law-detail":
-        return this.#readLaw(call.citationId);
+        return this.#readLaw(call.citationId, context);
       case "compute-evidence-gaps":
         return {
           status: "completed",
@@ -198,7 +182,7 @@ export class AgentToolRegistry {
           citationIds: [],
         };
       case "write-local-draft":
-        return this.#writeDraft(caseId, call, projection, sourceCitationIds);
+        return this.#writeDraft(caseId, call, projection, sourceCitationIds, context);
       case "request-user-input":
         return {
           status: "pending",
@@ -214,19 +198,28 @@ export class AgentToolRegistry {
     }
   }
 
-  async #searchLaw(caseId: string, query: string): Promise<AgentToolExecution> {
+  async #searchLaw(
+    caseId: string,
+    query: string,
+    context: AgentToolExecutionContext,
+  ): Promise<AgentToolExecution> {
     try {
       const safeQuery = this.#dependencies.redact(caseId, query).slice(0, 2_000);
-      return lawExecution(await this.#dependencies.law.search(safeQuery));
-    } catch {
+      return lawExecution(await this.#dependencies.law.search(safeQuery, context));
+    } catch (error) {
+      if (context.signal.aborted) throw error;
       return { status: "unavailable", value: { reason: "mcp-unavailable" }, citationIds: [] };
     }
   }
 
-  async #readLaw(citationId: string): Promise<AgentToolExecution> {
+  async #readLaw(
+    citationId: string,
+    context: AgentToolExecutionContext,
+  ): Promise<AgentToolExecution> {
     try {
-      return lawExecution(await this.#dependencies.law.detail(citationId));
-    } catch {
+      return lawExecution(await this.#dependencies.law.detail(citationId, context));
+    } catch (error) {
+      if (context.signal.aborted) throw error;
       return { status: "unavailable", value: { reason: "mcp-unavailable" }, citationIds: [] };
     }
   }
@@ -236,20 +229,25 @@ export class AgentToolRegistry {
     call: Extract<AgentToolCall, { toolName: "write-local-draft" }>,
     projection: AgentCaseProjection,
     citationIds: readonly string[],
+    context: AgentToolExecutionContext,
   ): Promise<AgentToolExecution> {
     try {
-      const result = await this.#dependencies.drafts.write({
-        caseId,
-        artifactKind: call.artifactKind,
-        contentDigest: call.contentDigest,
-        idempotencyKey: call.toolCallId,
-        maskedFacts: projection.maskedFacts,
-        citationIds: [...new Set(citationIds)].slice(0, 24),
-      });
+      const result = await this.#dependencies.drafts.write(
+        {
+          caseId,
+          artifactKind: call.artifactKind,
+          contentDigest: call.contentDigest,
+          idempotencyKey: call.toolCallId,
+          maskedFacts: projection.maskedFacts,
+          citationIds: [...new Set(citationIds)].slice(0, 24),
+        },
+        context,
+      );
       return result.status === "ok"
         ? { status: "completed", value: { artifactId: result.artifactId }, citationIds: [] }
         : { status: "unavailable", value: { reason: result.reason }, citationIds: [] };
-    } catch {
+    } catch (error) {
+      if (context.signal.aborted) throw error;
       return {
         status: "unavailable",
         value: { reason: "writer-unavailable" },

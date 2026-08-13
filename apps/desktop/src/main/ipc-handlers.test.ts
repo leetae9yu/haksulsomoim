@@ -34,7 +34,6 @@ function serviceFixture() {
       loginId: "login",
       authorizationUrl: "https://auth.openai.com/",
     })),
-    suggest: mock(async () => ({ text: "suggestion", citationIds: [] })),
   };
   return {
     handlers: createDesktopHandlers(
@@ -215,17 +214,8 @@ describe("desktop IPC handlers", () => {
     });
   });
 
-  test("rejects renderer-supplied masked facts and unknown fields on every boundary", async () => {
-    const { handlers, service } = serviceFixture();
-    await expect(
-      handlers.codexSuggestion({
-        caseId: "case-1",
-        approval: "user-approved",
-        citationIds: ["cite-1"],
-        maskedFacts: [{ id: "forged", text: "renderer supplied" }],
-      }),
-    ).rejects.toThrow();
-    expect(service.suggest).not.toHaveBeenCalled();
+  test("rejects unknown fields on the provider status boundary", async () => {
+    const { handlers } = serviceFixture();
     await expect(handlers.codexStatus({ unexpected: true })).rejects.toThrow();
   });
 

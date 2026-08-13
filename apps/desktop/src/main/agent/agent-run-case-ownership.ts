@@ -81,6 +81,10 @@ export class AgentRunCaseOwnership {
     }
   }
 
+  quarantine(caseId: string, runId: string): Promise<void> {
+    return this.#claims.quarantine(caseId, runId);
+  }
+
   async release(caseId: string, runId: string): Promise<void> {
     const owner = await this.#claims.owner(caseId);
     if (owner === undefined) return;
@@ -96,6 +100,9 @@ export class AgentRunCaseOwnership {
   }
 
   async recover(caseId: string): Promise<AgentRunSnapshot | undefined> {
+    if (await this.#claims.isQuarantined(caseId)) {
+      throw new AgentCaseClaimInvariantError("Agent case is quarantined by an unresolved tool");
+    }
     const runId = await this.#claims.owner(caseId);
     if (runId === undefined) return undefined;
     let snapshot: AgentRunSnapshot;

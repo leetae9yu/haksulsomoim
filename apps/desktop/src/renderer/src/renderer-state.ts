@@ -30,7 +30,6 @@ export const messages = Object.freeze({
   providerManual: "Codex 연결을 사용할 수 없어 이 단계는 수동 작성 모드로 유지됩니다.",
   providerFailed: "Codex 연결 상태를 확인하지 못했습니다. 수동으로 작성해 주세요.",
   loginFailed: "로그인을 시작하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-  suggestionFailed: "제안을 만들지 못했습니다. 승인 범위를 확인하고 다시 시도해 주세요.",
 });
 
 export type EvidenceMime = EvidenceAnalyzeRequest["mimeType"];

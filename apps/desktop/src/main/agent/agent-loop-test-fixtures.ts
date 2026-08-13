@@ -13,6 +13,7 @@ import {
   AgentCaseClaimInvariantError,
   type AgentRunSnapshot,
 } from "./agent-run-repository";
+import type { AgentExecutionTimer } from "./agent-tool-execution";
 import { type AgentOfficialLawTools, AgentToolRegistry } from "./agent-tool-registry";
 
 export const DIGEST_A = "a".repeat(64);
@@ -37,6 +38,11 @@ export class MemoryAgentRunStore {
       if (this.#owners.get(run.caseId) === run.runId) this.#owners.delete(run.caseId);
       throw error;
     }
+  }
+
+  async quarantineOwned(caseId: string, runId: string): Promise<void> {
+    if (this.#owners.get(caseId) !== runId)
+      throw new AgentCaseClaimInvariantError("Agent owner mismatch");
   }
 
   async releaseOwned(caseId: string, runId: string): Promise<void> {
@@ -135,6 +141,9 @@ export function createLoopHarness(
     projection?: MutableProjectionReader;
     law?: AgentOfficialLawTools;
     clock?: MutableClock;
+    timer?: AgentExecutionTimer;
+    toolTimeoutMs?: number;
+    toolSettlementGraceMs?: number;
   }> = {},
 ) {
   const runs = new MemoryAgentRunStore();
@@ -209,6 +218,11 @@ export function createLoopHarness(
     tools,
     mutations: new RuntimeCaseMutationQueue(),
     clock,
+    ...(options.timer === undefined ? {} : { timer: options.timer }),
+    ...(options.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: options.toolTimeoutMs }),
+    ...(options.toolSettlementGraceMs === undefined
+      ? {}
+      : { toolSettlementGraceMs: options.toolSettlementGraceMs }),
     identifiers: {
       nextRunId: () => `run-${++runNumber}`,
       nextDecisionId: () => `decision-${++decisionNumber}`,

@@ -154,9 +154,6 @@ class QaAgentProvider implements CodexAgentDecisionProvider {
     this.#rejectDeferredTurn?.(new Error("QA deferred Agent turn interrupted by host control"));
     this.#rejectDeferredTurn = undefined;
   }
-  async suggest(): Promise<never> {
-    throw new Error("QA Agent provider does not expose suggestions");
-  }
   async dispose(): Promise<void> {
     await this.interrupt();
   }

@@ -22,9 +22,5 @@ export class UnavailableCodexAgentProvider implements CodexAgentDecisionProvider
 
   async interrupt(): Promise<void> {}
 
-  async suggest(_input: unknown): Promise<never> {
-    throw new Error("The official Codex binary is unavailable; use manual mode");
-  }
-
   async dispose(): Promise<void> {}
 }

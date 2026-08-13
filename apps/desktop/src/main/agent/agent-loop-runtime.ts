@@ -13,6 +13,7 @@ import type {
   AgentRunStore,
 } from "./agent-loop-types";
 import type { AgentRunSnapshot } from "./agent-run-repository";
+import type { AgentExecutionTimer } from "./agent-tool-execution";
 import type { AgentToolRegistry } from "./agent-tool-registry";
 
 export interface AgentLoopRuntimeDependencies {
@@ -23,6 +24,10 @@ export interface AgentLoopRuntimeDependencies {
   readonly mutations: RuntimeCaseMutationQueue;
   readonly clock: AgentLoopClock;
   readonly identifiers: AgentLoopIdentifiers;
+  readonly timer?: AgentExecutionTimer;
+  readonly toolTimeoutMs?: number;
+  readonly toolSettlementGraceMs?: number;
+  readonly runtimeSignal?: AbortSignal;
   readonly publish?: (run: AgentRun) => void;
 }
 

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createPackageWithOptions } from "@electron/asar";
 import {
   assertAsarIntegrity,
+  assertNoRetiredSuggestionCapability,
   auditWindowsPackage,
   fsSafeNativeInventory,
   pruneWindowsNativePayload,
@@ -44,6 +45,18 @@ function writeFsSafeRuntime(root: string): void {
 }
 
 describe("Windows package payload audit", () => {
+  test("rejects the retired outbound capability from staged runtime files", () => {
+    withTemporaryRoot((root) => {
+      const preload = join(root, "out/preload/index.js");
+      for (const token of ["codex" + "Suggestion", "codex:" + "suggestion"]) {
+        write(preload, `window.api[${JSON.stringify(token)}] = true`);
+        expect(() => assertNoRetiredSuggestionCapability(root)).toThrow("Retired outbound");
+      }
+      write(preload, "window.api.startAgentRun = true");
+      expect(() => assertNoRetiredSuggestionCapability(root)).not.toThrow();
+    });
+  });
+
   test("prunes the disposable stage to Windows x64 native directories", () => {
     withTemporaryRoot((root) => {
       writeFsSafeRuntime(root);

@@ -16,10 +16,17 @@ import {
   pauseActiveAgentRun,
   pauseAgentProviderTurn,
   pauseAgentRunWithoutTurn,
+  pauseAgentToolTimeout,
 } from "./agent-loop-settlements";
 import { acceptAgentDecision, prepareAgentTurn } from "./agent-loop-turns";
 import type { AgentLoopProvider } from "./agent-loop-types";
 import type { AgentRunSnapshot } from "./agent-run-repository";
+import {
+  AgentToolExecutionBoundary,
+  type AgentToolExecutionOutcome,
+  systemExecutionTimer,
+} from "./agent-tool-execution";
+import type { AgentToolExecution } from "./agent-tool-registry";
 
 type ProviderTurn =
   | Readonly<{ kind: "decision"; raw: unknown }>
@@ -45,6 +52,8 @@ async function awaitCancellation(requested: Promise<void>): Promise<ProviderTurn
 export class AgentLoopRunner {
   readonly #dependencies: AgentLoopRuntimeDependencies;
   readonly #control: AgentLoopControl;
+  #activeTool: AgentToolExecutionBoundary<AgentToolExecution> | undefined;
+  #quarantined = false;
 
   constructor(
     dependencies: AgentLoopRuntimeDependencies,
@@ -73,6 +82,10 @@ export class AgentLoopRunner {
 
   get runId(): string {
     return this.#control.runId;
+  }
+
+  get quarantined(): boolean {
+    return this.#quarantined;
   }
 
   async drive(): Promise<AgentRun> {
@@ -112,24 +125,24 @@ export class AgentLoopRunner {
       if (accepted.kind === "stop") return accepted.run;
       if (accepted.kind === "continue") continue;
       if (this.#stopping()) return this.#stoppedRun();
-      const execution = await this.#dependencies.tools.execute(
-        this.#control.caseId,
-        accepted.call,
-        accepted.projection,
-        accepted.citationIds,
-      );
-      if (this.#stopping()) return this.#stoppedRun();
+      const outcome = await this.#executeTool(accepted);
+      if (outcome.kind !== "completed") {
+        this.#quarantined = outcome.kind === "interrupted" && outcome.quarantined;
+        if (this.#stopping()) return this.#stoppedRun();
+        return pauseAgentToolTimeout(this.#dependencies, this.#control);
+      }
+      this.#activeTool = undefined;
       const observation = this.#dependencies.tools.prepareObservation(
         this.#control.caseId,
         accepted.call,
-        execution,
+        outcome.value,
         toolResults(accepted.run),
       );
       const run = await finishAgentToolTurn(
         this.#dependencies,
         this.#control,
         observation.result,
-        execution,
+        outcome.value,
       );
       for (const citationId of observation.result.citationIds) {
         this.#control.citationIds.add(citationId);
@@ -141,9 +154,10 @@ export class AgentLoopRunner {
   pause(): Promise<AgentRun> {
     if (this.#control.cancellation !== undefined) return this.#control.cancellation;
     if (this.#control.pause !== undefined) return this.#control.pause;
+    this.#control.requestCancellation();
+    this.#activeTool?.interrupt("run-stopped");
     const request = this.#persistAndInterrupt("pause");
     this.#control.pause = request;
-    this.#control.requestCancellation();
     return request;
   }
 
@@ -151,9 +165,10 @@ export class AgentLoopRunner {
     if (this.#control.cancellation !== undefined) return this.#control.cancellation;
     if (this.#control.pause !== undefined) return this.#control.pause;
     this.#control.cancelled = true;
+    this.#control.requestCancellation();
+    this.#activeTool?.interrupt("run-stopped");
     const request = this.#persistAndInterrupt("cancel");
     this.#control.cancellation = request;
-    this.#control.requestCancellation();
     return request;
   }
 
@@ -178,9 +193,37 @@ export class AgentLoopRunner {
       }
       // A durably persisted host pause or cancellation remains authoritative.
     }
+    const toolOutcome = await this.#activeTool?.outcome;
+    if (toolOutcome?.kind === "interrupted") this.#quarantined = toolOutcome.quarantined;
     if (persistenceFailure !== undefined) throw persistenceFailure;
     if (run === undefined) throw new AgentLoopStateError("Agent settlement did not persist");
     return run;
+  }
+
+  #executeTool(
+    accepted: Extract<Awaited<ReturnType<typeof acceptAgentDecision>>, { kind: "execute" }>,
+  ): Promise<AgentToolExecutionOutcome<AgentToolExecution>> {
+    const timeoutMs = Math.max(
+      1,
+      Math.min(this.#dependencies.toolTimeoutMs ?? 30_000, accepted.run.budget.durationMsRemaining),
+    );
+    const boundary = new AgentToolExecutionBoundary(
+      (context) =>
+        this.#dependencies.tools.execute(
+          this.#control.caseId,
+          accepted.call,
+          accepted.projection,
+          accepted.citationIds,
+          context,
+        ),
+      {
+        timeoutMs,
+        graceMs: this.#dependencies.toolSettlementGraceMs ?? 250,
+        timer: this.#dependencies.timer ?? systemExecutionTimer,
+      },
+    );
+    this.#activeTool = boundary;
+    return boundary.outcome;
   }
 
   #stopping(): boolean {

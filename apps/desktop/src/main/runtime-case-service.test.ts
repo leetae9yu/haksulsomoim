@@ -25,7 +25,6 @@ class MemoryRepository implements RuntimeCaseRepository {
 
 function fixture() {
   const repository = new MemoryRepository();
-  const suggested: unknown[] = [];
   const lawCalls: unknown[] = [];
   const provider = {
     state: {
@@ -36,10 +35,6 @@ function fixture() {
       loginId: "login-1",
       authorizationUrl: "https://auth.openai.com/authorize",
     }),
-    suggest: async (input: unknown) => {
-      suggested.push(input);
-      return { text: "확인하세요", citationIds: ["cite-1"] };
-    },
     async dispose() {},
   } as CodexAgentProvider;
   const law = {
@@ -97,7 +92,7 @@ function fixture() {
     law,
     provider: async () => provider,
   });
-  return { lawCalls, repository, service, suggested };
+  return { lawCalls, repository, service };
 }
 
 async function preparedFixture() {
@@ -169,8 +164,8 @@ describe("runtime case service", () => {
     ]);
   });
 
-  test("returns official law citations and builds Codex context from redacted stored facts", async () => {
-    const { lawCalls, repository, service, suggested } = await preparedFixture();
+  test("returns official law citations from redacted stored facts", async () => {
+    const { lawCalls, repository, service } = await preparedFixture();
     await service.confirmOcrFacts({
       caseId: "case-1",
       evidenceId: "evidence-1",
@@ -184,25 +179,6 @@ describe("runtime case service", () => {
       status: "ok",
       citations: [{ sourceUrl: "https://www.law.go.kr/법령/민법" }],
     });
-    const citationId = "c".repeat(64);
-    await service.suggest({
-      caseId: "case-1",
-      approval: "user-approved",
-      citationIds: [citationId],
-    });
-    expect(suggested).toHaveLength(1);
-    const serialized = JSON.stringify(suggested[0]);
-    expect(serialized).not.toContain("110-123-456789");
-    expect(serialized).not.toContain("account");
-    expect(suggested[0]).toMatchObject({
-      approval: "user-approved",
-      citationIds: [citationId],
-      maskedFacts: [
-        { id: "amount-krw", text: "amountKrw: 100000" },
-        { id: "criminal-state", text: "criminalState: evidence-review" },
-        { id: "civil-state", text: "civilState: pre-filing" },
-      ],
-    });
     expect(repository.dossiers.get("case-1")?.retrievedCitations).toHaveLength(1);
     const lawPayload = JSON.stringify(lawCalls);
     expect(lawPayload).not.toContain("110-123-456789");
@@ -213,27 +189,6 @@ describe("runtime case service", () => {
     expect(lawPayload).not.toContain("[CASE_");
     expect(lawPayload).toContain('"query":"민법"');
     expect(lawPayload).toContain('"mst":"261817"');
-  });
-
-  test("rejects citation IDs not durably retrieved for the same case", async () => {
-    const { repository, service, suggested } = await preparedFixture();
-    await service.guidance("case-1", "민법");
-    const first = repository.dossiers.get("case-1");
-    if (first === undefined) throw new Error("fixture failed");
-    await repository.create({
-      ...structuredClone(first),
-      caseId: "case-2",
-      retrievedCitations: [],
-    });
-
-    await expect(
-      service.suggest({
-        caseId: "case-2",
-        approval: "user-approved",
-        citationIds: ["c".repeat(64)],
-      }),
-    ).rejects.toThrow("retrieved for this case");
-    expect(suggested).toHaveLength(0);
   });
 
   test("serializes concurrent read-modify-save transitions for one case", async () => {

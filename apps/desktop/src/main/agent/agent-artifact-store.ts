@@ -8,6 +8,7 @@ import {
   caseIdSchema,
   observationDigestSchema,
 } from "./agent-contracts-core";
+import type { AgentToolExecutionContext } from "./agent-tool-execution";
 
 const artifactKindSchema = z.enum(["civil-demand", "criminal-complaint"]);
 const recordSchema = z.strictObject({
@@ -53,7 +54,8 @@ export class EncryptedAgentArtifactStore {
     this.#key = Uint8Array.from(encryptionKey);
   }
 
-  async write(input: AgentArtifactWriteInput) {
+  async write(input: AgentArtifactWriteInput, context: AgentToolExecutionContext) {
+    context.signal.throwIfAborted();
     const artifactKind = artifactKindSchema.parse(input.artifactKind);
     const caseId = caseIdSchema.parse(input.caseId);
     const sourceObservationDigest = observationDigestSchema.parse(input.contentDigest);
@@ -94,7 +96,8 @@ export class EncryptedAgentArtifactStore {
       sourceObservationDigest,
       view,
     });
-    await this.#publish(record);
+    context.signal.throwIfAborted();
+    await this.#publish(record, context.signal);
     return { status: "ok" as const, artifactId };
   }
 
@@ -108,7 +111,7 @@ export class EncryptedAgentArtifactStore {
     return { view: record.view, sourceObservationDigest: record.sourceObservationDigest };
   }
 
-  async #publish(record: ArtifactRecord): Promise<void> {
+  async #publish(record: ArtifactRecord, signal: AbortSignal): Promise<void> {
     await mkdir(this.#directory, { recursive: true, mode: 0o700 });
     const finalPath = this.#path(record.artifactId);
     const temporaryPath = join(this.#directory, `.artifact-${randomBytes(12).toString("hex")}`);
@@ -117,6 +120,7 @@ export class EncryptedAgentArtifactStore {
       await file.writeFile(this.#encrypt(record), "utf8");
       await file.sync();
       await file.close();
+      signal.throwIfAborted();
       try {
         await link(temporaryPath, finalPath);
       } catch (error) {

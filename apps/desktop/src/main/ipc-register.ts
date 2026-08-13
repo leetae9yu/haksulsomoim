@@ -68,7 +68,6 @@ export function registerDesktopIpcWith(
     [IPC_CHANNELS.openTrustedAuthentication, openTrustedAuthentication],
     [IPC_CHANNELS.codexStatus, handlers.codexStatus],
     [IPC_CHANNELS.codexLogin, handlers.codexLogin],
-    [IPC_CHANNELS.codexSuggestion, handlers.codexSuggestion],
     [IPC_CHANNELS.agentCaseOpen, handlers.openAgentCase],
     [IPC_CHANNELS.agentArtifactOpen, handlers.openAgentArtifact],
     [IPC_CHANNELS.agentRunStart, handlers.startAgentRun],

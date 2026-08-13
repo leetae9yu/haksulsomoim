@@ -11,7 +11,7 @@ function withDuration(run: AgentRun, durationMsRemaining: number) {
 
 export function pauseIdleAgentRun(
   run: AgentRun,
-  reason: "provider-unavailable" | "context-changed" | "user-paused",
+  reason: "provider-unavailable" | "tool-unavailable" | "context-changed" | "user-paused",
   durationMsRemaining: number,
 ): AgentRun {
   return agentRunSchema.parse({
@@ -53,6 +53,20 @@ export function pauseFailedProviderTurn(
     ...run,
     budget: withDuration(run, durationMsRemaining),
     state: { kind: "paused", reason: "provider-unavailable" },
+    steps: [...run.steps, { kind: "interrupted", stepId, interruption }],
+  });
+}
+
+export function pauseTimedOutAgentTool(
+  run: AgentRun,
+  stepId: string,
+  durationMsRemaining: number,
+): AgentRun {
+  const interruption = { kind: "tool-timeout" } as const;
+  return agentRunSchema.parse({
+    ...run,
+    budget: withDuration(run, durationMsRemaining),
+    state: { kind: "paused", reason: "tool-unavailable" },
     steps: [...run.steps, { kind: "interrupted", stepId, interruption }],
   });
 }

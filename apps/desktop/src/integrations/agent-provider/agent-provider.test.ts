@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { Redactor } from "../../security/redaction";
 import {
   type CodexAppServerConnection,
   type CodexAppServerNotification,
   type CodexAppServerRequest,
   type CodexAppServerStartResult,
   createCodexAgentProvider,
-  createUserApprovedSuggestionInput,
 } from "./agent-provider";
 
 class FakeCodexAppServer implements CodexAppServerConnection {
@@ -20,10 +18,6 @@ class FakeCodexAppServer implements CodexAppServerConnection {
   };
   initializationError: Error | undefined;
   closed = false;
-  suggestionText = JSON.stringify({
-    text: "제출 전 날짜를 확인하세요.",
-    citationIds: ["cite-1"],
-  });
   private readonly listeners = new Set<
     (notification: CodexAppServerNotification) => void | Promise<void>
   >();
@@ -38,28 +32,6 @@ class FakeCodexAppServer implements CodexAppServerConnection {
         return { account: this.account, requiresOpenaiAuth: true };
       case "account/login/start":
         return this.loginResponse;
-      case "thread/start":
-        return { thread: { id: "thread-1" } };
-      case "turn/start": {
-        const completion = this.emit({
-          method: "item/completed",
-          params: {
-            threadId: "thread-1",
-            turnId: "turn-1",
-            item: { type: "agentMessage", id: "item-1", text: this.suggestionText },
-          },
-        }).then(() =>
-          this.emit({
-            method: "turn/completed",
-            params: {
-              threadId: "thread-1",
-              turn: { id: "turn-1", status: "completed", error: null },
-            },
-          }),
-        );
-        await completion;
-        return { turn: { id: "turn-1" } };
-      }
     }
   }
 
@@ -186,45 +158,5 @@ describe("Codex agent provider", () => {
       status: "authenticated",
       account: { type: "chatgpt", email: null, planType: "pro" },
     });
-  });
-
-  test("sends only user-approved masked facts/citation IDs and returns immutable suggestions", async () => {
-    const server = new FakeCodexAppServer();
-    server.account = { type: "chatgpt", email: null, planType: "plus" };
-    const provider = await createCodexAgentProvider(async () => available(server));
-    const caseState = { claimantName: "홍길동", status: "draft" };
-    const redactor = new Redactor(new Uint8Array(32).fill(0x31));
-    const maskedFact = redactor.redactStructured("case-1", "신청인은 홍길동이다.", {
-      personName: [caseState.claimantName],
-    });
-    const approvedInput = createUserApprovedSuggestionInput(
-      [{ id: "fact-1", text: maskedFact }],
-      ["cite-1"],
-    );
-
-    const suggestion = await provider.suggest(approvedInput);
-
-    const threadRequest = server.requests.find((request) => request.method === "thread/start");
-    const turnRequest = server.requests.find((request) => request.method === "turn/start");
-    expect(threadRequest).toEqual({
-      method: "thread/start",
-      params: {
-        ephemeral: true,
-        approvalPolicy: "never",
-        sandbox: "read-only",
-      },
-    });
-    expect(JSON.stringify(turnRequest)).toMatch(/신청인은 \[PERSON_[A-Z0-9]{16}\]이다\./);
-    expect(JSON.stringify(turnRequest)).toContain("cite-1");
-    expect(JSON.stringify(turnRequest)).not.toContain("uniqueItems");
-    expect(JSON.stringify(server.requests)).not.toContain("홍길동");
-    expect(JSON.stringify(server.requests)).not.toContain("accessToken");
-    expect(JSON.stringify(server.requests)).not.toContain("apiKey");
-    expect(suggestion).toEqual({ text: "제출 전 날짜를 확인하세요.", citationIds: ["cite-1"] });
-    expect(Object.isFrozen(suggestion)).toBe(true);
-    expect(Object.isFrozen(suggestion.citationIds)).toBe(true);
-    expect(caseState).toEqual({ claimantName: "홍길동", status: "draft" });
-    expect("accessToken" in provider).toBe(false);
-    expect("apiKey" in provider).toBe(false);
   });
 });

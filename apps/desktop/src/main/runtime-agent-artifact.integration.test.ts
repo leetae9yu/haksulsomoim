@@ -63,9 +63,6 @@ function provider(): CodexAgentProvider {
     startChatGptLogin: async (): Promise<never> => {
       throw new Error("unused");
     },
-    suggest: async (): Promise<never> => {
-      throw new Error("unused");
-    },
     dispose: async () => undefined,
   } as CodexAgentProvider;
 }

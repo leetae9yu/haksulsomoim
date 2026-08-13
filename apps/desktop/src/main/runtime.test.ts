@@ -127,9 +127,6 @@ describe("desktop runtime", () => {
       startChatGptLogin: async () => {
         throw new Error("unused");
       },
-      suggest: async () => {
-        throw new Error("unused");
-      },
       dispose: async () => {
         cleaned.push("provider");
         throw new Error("provider close failed");

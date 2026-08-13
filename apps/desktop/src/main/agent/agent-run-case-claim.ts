@@ -18,6 +18,7 @@ const encryptedClaimSchema = z.strictObject({
   authTag: z.string().min(1),
 });
 const claimTails = new Map<string, Promise<void>>();
+const quarantinedClaims = new Set<string>();
 
 type AgentCaseClaim = z.infer<typeof claimSchema>;
 
@@ -71,9 +72,30 @@ export class EncryptedAgentCaseClaimStore {
     });
   }
 
+  async quarantine(caseId: string, runId: string): Promise<void> {
+    const expected = claimSchema.parse({ caseId, runId });
+    await this.#withCase(expected.caseId, async (locator, lockKey) => {
+      const claim = await this.#read(expected.caseId, locator);
+      if (claim?.runId !== expected.runId) {
+        throw new AgentCaseClaimInvariantError("Agent quarantine owner mismatch");
+      }
+      quarantinedClaims.add(lockKey);
+    });
+  }
+
+  async isQuarantined(caseId: string): Promise<boolean> {
+    const parsedCaseId = caseIdSchema.parse(caseId);
+    return this.#withCase(parsedCaseId, (_locator, lockKey) =>
+      Promise.resolve(quarantinedClaims.has(lockKey)),
+    );
+  }
+
   async release(caseId: string, runId: string): Promise<void> {
     const expected = claimSchema.parse({ caseId, runId });
-    await this.#withCase(expected.caseId, async (locator) => {
+    await this.#withCase(expected.caseId, async (locator, lockKey) => {
+      if (quarantinedClaims.has(lockKey)) {
+        throw new AgentCaseAlreadyClaimedError();
+      }
       const claim = await this.#read(expected.caseId, locator);
       if (claim === undefined) return;
       if (claim.runId !== expected.runId) {
@@ -95,7 +117,10 @@ export class EncryptedAgentCaseClaimStore {
     return join(this.#directory, `${locator}.claim`);
   }
 
-  async #withCase<T>(caseId: string, operation: (locator: string) => Promise<T>): Promise<T> {
+  async #withCase<T>(
+    caseId: string,
+    operation: (locator: string, lockKey: string) => Promise<T>,
+  ): Promise<T> {
     await this.#verifier.verify();
     const locator = this.#locator(caseId);
     const lockKey = `${await realpath(this.#directory)}\0${locator}`;
@@ -108,7 +133,7 @@ export class EncryptedAgentCaseClaimStore {
     claimTails.set(lockKey, tail);
     await previous;
     try {
-      return await operation(locator);
+      return await operation(locator, lockKey);
     } finally {
       release();
       if (claimTails.get(lockKey) === tail) claimTails.delete(lockKey);

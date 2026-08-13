@@ -2,12 +2,10 @@ import {
   type CaseCreateResponse,
   type CodexLoginResponse,
   type CodexStatusResponse,
-  type CodexSuggestionResponse,
   caseCreateRequestSchema,
   civilTransitionRequestSchema,
   codexLoginRequestSchema,
   codexStatusRequestSchema,
-  codexSuggestionRequestSchema,
   confirmOcrFactsRequestSchema,
   criminalTransitionRequestSchema,
   type EnforcementChoicesResponse,
@@ -90,7 +88,6 @@ export interface DesktopHandlers extends AgentLifecycleHandlers {
   guidance(request: unknown): Promise<GuidanceResponse>;
   codexStatus(request: unknown): Promise<CodexStatusResponse>;
   codexLogin(request: unknown): Promise<CodexLoginResponse>;
-  codexSuggestion(request: unknown): Promise<CodexSuggestionResponse>;
 }
 
 function boundProjection(
@@ -227,9 +224,6 @@ export function createDesktopHandlers(
     async codexLogin(request) {
       codexLoginRequestSchema.parse(request);
       return service.codexLogin();
-    },
-    async codexSuggestion(request) {
-      return service.suggest(codexSuggestionRequestSchema.parse(request));
     },
   };
 }

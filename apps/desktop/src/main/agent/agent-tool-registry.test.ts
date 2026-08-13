@@ -4,6 +4,11 @@ import { agentToolCallSchema, agentToolResultSchema } from "./agent-contracts";
 import type { AgentCaseProjection } from "./agent-loop-types";
 import { type AgentEncryptedDraftWriter, AgentToolRegistry } from "./agent-tool-registry";
 
+const executionContext = () => ({
+  signal: new AbortController().signal,
+  deadline: Date.now() + 1_000,
+});
+
 function fixture() {
   const redactor = new Redactor(new Uint8Array(32).fill(5));
   const draftWrites: Parameters<AgentEncryptedDraftWriter["write"]>[0][] = [];
@@ -76,7 +81,7 @@ describe("closed Agent tool registry", () => {
       toolCallId: "law-provenance",
       query: "민법",
     });
-    const execution = await registry.execute("case-1", call, projection);
+    const execution = await registry.execute("case-1", call, projection, [], executionContext());
     const observation = registry.prepareObservation("case-1", call, execution);
 
     expect(observation.result.citationIds.map(String)).toEqual(["citation-1"]);
@@ -124,23 +129,33 @@ describe("closed Agent tool registry", () => {
       action: "approve-filing",
     });
 
-    expect(await registry.execute("case-1", inspect, projection)).toMatchObject({
+    expect(
+      await registry.execute("case-1", inspect, projection, [], executionContext()),
+    ).toMatchObject({
       status: "completed",
       value: { workflow: projection.workflow },
     });
-    expect(await registry.execute("case-1", gaps, projection)).toMatchObject({
+    expect(
+      await registry.execute("case-1", gaps, projection, [], executionContext()),
+    ).toMatchObject({
       status: "completed",
       value: { gaps: ["evidence-file", "confirmed-facts"] },
     });
-    expect(await registry.execute("case-1", draft, projection, ["citation-1"])).toMatchObject({
+    expect(
+      await registry.execute("case-1", draft, projection, ["citation-1"], executionContext()),
+    ).toMatchObject({
       status: "completed",
       value: { artifactId: "artifact-1" },
     });
-    expect(await registry.execute("case-1", input, projection)).toMatchObject({
+    expect(
+      await registry.execute("case-1", input, projection, [], executionContext()),
+    ).toMatchObject({
       status: "pending",
       value: { kind: "user-input", field: "evidence-gap" },
     });
-    expect(await registry.execute("case-1", action, projection)).toMatchObject({
+    expect(
+      await registry.execute("case-1", action, projection, [], executionContext()),
+    ).toMatchObject({
       status: "pending",
       value: { kind: "user-action", action: "approve-filing" },
     });
@@ -215,7 +230,9 @@ describe("closed Agent tool registry", () => {
 
     expect(() => registry.validate(detail, [])).toThrow("requires a cited result");
     registry.validate(detail, ["citation-1"]);
-    expect(await registry.execute("case-1", detail, projection)).toMatchObject({
+    expect(
+      await registry.execute("case-1", detail, projection, [], executionContext()),
+    ).toMatchObject({
       status: "completed",
       citationIds: ["citation-1"],
     });

@@ -19,6 +19,7 @@ import { AgentLifecycleRuntime } from "./agent/agent-lifecycle-runtime";
 import { AgentRunRepository } from "./agent/agent-run-repository";
 import { ComposedAgentRuntime, type DesktopAgentRuntime } from "./agent/agent-runtime";
 import { createAgentLoopDependencies } from "./agent/agent-runtime-composition";
+import type { AgentExecutionTimer } from "./agent/agent-tool-execution";
 import {
   type AgentLifecycleService,
   createDesktopHandlers,
@@ -40,6 +41,11 @@ export interface DesktopRuntimeFactories {
   readonly createLaw?: () => KoreanLawMcpAdapter;
   readonly createOcr?: () => Promise<LocalOcrPort>;
   readonly createProvider?: () => Promise<CodexAgentProvider>;
+  readonly agentExecution?: Readonly<{
+    timer?: AgentExecutionTimer;
+    toolTimeoutMs?: number;
+    toolSettlementGraceMs?: number;
+  }>;
 }
 
 export async function createDesktopRuntime(
@@ -107,6 +113,7 @@ export async function createDesktopRuntime(
       external,
       drafts: agentArtifacts,
       mutations,
+      ...factories.agentExecution,
     }),
     external,
     agentRuns,

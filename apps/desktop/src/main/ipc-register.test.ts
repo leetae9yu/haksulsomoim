@@ -44,7 +44,7 @@ describe("desktop IPC registration", () => {
     const start = invokes.get(IPC_CHANNELS.agentRunStart);
     expect(invokes.get(IPC_CHANNELS.agentCaseOpen)).toBeDefined();
     expect(invokes.get(IPC_CHANNELS.agentArtifactOpen)).toBeDefined();
-    expect(ipc.handle).toHaveBeenCalledTimes(21);
+    expect(ipc.handle).toHaveBeenCalledTimes(20);
     expect(start).toBeDefined();
     await expect(start?.({ senderFrame: { url: "https://evil.example" } }, {})).rejects.toThrow(
       "untrusted renderer",

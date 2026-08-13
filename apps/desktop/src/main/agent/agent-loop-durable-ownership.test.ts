@@ -32,6 +32,10 @@ class FaultingRunStore {
     return this.#repository.createOwned(run);
   }
 
+  quarantineOwned(caseId: string, runId: string): Promise<void> {
+    return this.#repository.quarantineOwned(caseId, runId);
+  }
+
   async releaseOwned(caseId: string, runId: string): Promise<void> {
     if (this.#failure === "release") throw new Error("injected claim release failure");
     await this.#repository.releaseOwned(caseId, runId);

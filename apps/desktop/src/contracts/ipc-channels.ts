@@ -10,7 +10,6 @@ export const IPC_CHANNELS = Object.freeze({
   openTrustedAuthentication: "trusted-authentication:open",
   codexStatus: "codex:status",
   codexLogin: "codex:login",
-  codexSuggestion: "codex:suggestion",
   agentCaseOpen: "agent:case:open",
   agentArtifactOpen: "agent:artifact:open",
   agentRunStart: "agent:run:start",

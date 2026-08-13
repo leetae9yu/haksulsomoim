@@ -12,6 +12,7 @@ import type {
   AgentUnavailableReason,
   DesktopAgentRuntime,
 } from "./agent-runtime-types";
+import { AgentToolQuarantinedError } from "./agent-tool-execution";
 
 export type {
   AgentResumeInput,
@@ -185,10 +186,17 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     ];
     const cancellations = await Promise.allSettled(active.map((run) => this.cancel(run)));
     const settlements = await Promise.allSettled([...this.#tasks].map((task) => task.promise));
+    const quarantined = [
+      ...this.#service.quarantinedRuns(),
+      ...[...this.#resumed.values()]
+        .filter((runner) => runner.quarantined)
+        .map((runner) => ({ caseId: runner.caseId, runId: runner.runId })),
+    ].map((run) => new AgentToolQuarantinedError(run.caseId, run.runId));
     const failures = [...cancellations, ...settlements]
       .filter((result): result is PromiseRejectedResult => result.status === "rejected")
       .map((result) => result.reason)
       .filter((error) => !(error instanceof AgentRuntimeDisposedError));
+    failures.push(...quarantined);
     if (failures.length > 0) throw new AggregateError(failures, "Agent runtime disposal failed");
   }
 
@@ -226,6 +234,10 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
 
   async #releaseResumed(runner: AgentLoopRunner, run: AgentRun): Promise<void> {
     if (run.state.kind === "active") throw new AgentRunInvariantError("Cannot release active run");
+    if (runner.quarantined) {
+      await this.#runs.quarantineOwned(runner.caseId, runner.runId);
+      return;
+    }
     await this.#dependencies.mutations.run(runner.caseId, async () => {
       if (this.#resumed.get(runner.caseId) !== runner) return;
       await this.#runs.releaseOwned(runner.caseId, runner.runId);

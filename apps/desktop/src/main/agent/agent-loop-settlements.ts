@@ -4,6 +4,7 @@ import {
   pauseAgentRunForUser,
   pauseFailedProviderTurn,
   pauseIdleAgentRun,
+  pauseTimedOutAgentTool,
 } from "./agent-loop-boundary-reducer";
 import { finishAgentTool } from "./agent-loop-reducer";
 import {
@@ -62,6 +63,23 @@ export async function pauseAgentProviderTurn(
     const current = control.snapshot.run;
     if (current.state.kind !== "active") return current;
     const run = pauseFailedProviderTurn(
+      current,
+      dependencies.identifiers.nextStepId(),
+      remainingDuration(dependencies, control, current),
+    );
+    await commitControlRun(dependencies, control, run, true);
+    return run;
+  });
+}
+
+export async function pauseAgentToolTimeout(
+  dependencies: AgentLoopRuntimeDependencies,
+  control: AgentLoopControl,
+): Promise<AgentRun> {
+  return dependencies.mutations.run(control.caseId, async () => {
+    const current = control.snapshot.run;
+    if (current.state.kind !== "active") return current;
+    const run = pauseTimedOutAgentTool(
       current,
       dependencies.identifiers.nextStepId(),
       remainingDuration(dependencies, control, current),

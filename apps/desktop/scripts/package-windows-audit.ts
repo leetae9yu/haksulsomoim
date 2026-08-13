@@ -110,6 +110,20 @@ function normalizedAsarPath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\/+/, "");
 }
 
+export function assertNoRetiredSuggestionCapability(root: string): void {
+  const inspected = filesBelow(root).filter((path) =>
+    /\.(?:cjs|mjs|js|json|html|d\.ts)$/iu.test(path),
+  );
+  const retiredTokens = ["codexSuggestion", "codex:suggestion"] as const;
+  const offender = inspected.find((path) => {
+    const contents = readFileSync(join(root, path), "utf8");
+    return retiredTokens.some((token) => contents.includes(token));
+  });
+  if (offender !== undefined) {
+    throw new Error(`Retired outbound suggestion capability remains in package: ${offender}`);
+  }
+}
+
 function assertRuntimeImports(extractedRoot: string): void {
   const kordocManifest = JSON.parse(
     readFileSync(join(extractedRoot, "node_modules/kordoc/package.json"), "utf8"),
@@ -148,6 +162,7 @@ export function assertAsarIntegrity(asarPath: string): readonly string[] {
   const extractedRoot = mkdtempSync(join(tmpdir(), "haksul-asar-extract-"));
   try {
     extractAll(asarPath, extractedRoot);
+    assertNoRetiredSuggestionCapability(extractedRoot);
     assertRuntimeImports(extractedRoot);
   } finally {
     rmSync(extractedRoot, { force: true, recursive: true });
@@ -161,6 +176,7 @@ export function auditWindowsPackage(
 ): WindowsPayloadAudit {
   const unpackedDependencies = join(unpackedRoot, "resources", "app.asar.unpacked");
   const payloadPaths = filesBelow(unpackedRoot);
+  assertNoRetiredSuggestionCapability(unpackedRoot);
   const forbidden = [...asarPaths, ...payloadPaths].filter(isForbiddenPath).sort();
   if (forbidden.length > 0)
     throw new Error(`Forbidden Windows package payload: ${forbidden.join(", ")}`);

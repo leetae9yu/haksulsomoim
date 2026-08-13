@@ -159,13 +159,6 @@ export type TrustedAuthenticationRequest = z.infer<typeof trustedAuthenticationR
 export const codexStatusRequestSchema = emptyRequest;
 export const codexLoginRequestSchema = emptyRequest;
 export type EmptyRequest = z.infer<typeof emptyRequest>;
-export const codexSuggestionRequestSchema = z.strictObject({
-  caseId,
-  approval: z.literal("user-approved"),
-  citationIds: z.array(z.string().min(1).max(255)).max(100),
-});
-export type CodexSuggestionRequest = z.infer<typeof codexSuggestionRequestSchema>;
-
 export type WorkflowSnapshot = Readonly<{
   criminalState: "evidence-review" | "complaint-ready" | "complaint-filed";
   civilState:
@@ -229,11 +222,6 @@ export type CodexLoginResponse = Readonly<{
   loginId: string;
   authorizationUrl: string;
 }>;
-export type CodexSuggestionResponse = Readonly<{
-  text: string;
-  citationIds: readonly string[];
-}>;
-
 export interface DesktopApi {
   createCase(request: CaseCreateRequest): Promise<CaseCreateResponse>;
   analyzeEvidence(request: EvidenceAnalyzeRequest): Promise<EvidenceAnalyzeResponse>;
@@ -246,7 +234,6 @@ export interface DesktopApi {
   openTrustedAuthentication?(request: TrustedAuthenticationRequest): Promise<void>;
   codexStatus?(request: EmptyRequest): Promise<CodexStatusResponse>;
   codexLogin?(request: EmptyRequest): Promise<CodexLoginResponse>;
-  codexSuggestion?(request: CodexSuggestionRequest): Promise<CodexSuggestionResponse>;
   openAgentCase?(request: AgentCaseOpenRequest): Promise<AgentCaseContext>;
   openAgentArtifact?(request: AgentArtifactOpenRequest): Promise<AgentArtifactView>;
   startAgentRun?(request: AgentRunStartIpcRequest): Promise<AgentRunProjection>;

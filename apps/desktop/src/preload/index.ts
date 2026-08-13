@@ -49,7 +49,6 @@ export function createDesktopPreloadApi(ipc: PreloadIpcPort): Required<DesktopAp
     openTrustedAuthentication: (request) => invoke(IPC_CHANNELS.openTrustedAuthentication, request),
     codexStatus: (request) => invoke(IPC_CHANNELS.codexStatus, request),
     codexLogin: (request) => invoke(IPC_CHANNELS.codexLogin, request),
-    codexSuggestion: (request) => invoke(IPC_CHANNELS.codexSuggestion, request),
     async openAgentCase(request) {
       return agentCaseContextSchema.parse(await ipc.invoke(IPC_CHANNELS.agentCaseOpen, request));
     },

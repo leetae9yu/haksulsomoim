@@ -21,7 +21,13 @@ const runStateSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("active") }),
   z.strictObject({
     kind: z.literal("paused"),
-    reason: z.enum(["approval-required", "provider-unavailable", "context-changed", "user-paused"]),
+    reason: z.enum([
+      "approval-required",
+      "provider-unavailable",
+      "tool-unavailable",
+      "context-changed",
+      "user-paused",
+    ]),
   }),
   z.strictObject({ kind: z.literal("terminal"), outcome: terminalOutcomeSchema }),
   z.strictObject({ kind: z.literal("interrupted"), interruption: interruptionSchema }),
@@ -85,7 +91,13 @@ export const agentStepSummarySchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("interrupted"),
     stepId: agentStepIdSchema,
-    reason: z.enum(["user-cancelled", "provider-timeout", "application-restarted", "user-paused"]),
+    reason: z.enum([
+      "user-cancelled",
+      "provider-timeout",
+      "tool-timeout",
+      "application-restarted",
+      "user-paused",
+    ]),
   }),
   z.strictObject({
     kind: z.literal("terminal"),

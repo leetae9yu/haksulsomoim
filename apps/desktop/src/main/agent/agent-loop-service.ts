@@ -73,6 +73,12 @@ export class AgentLoopService {
     };
   }
 
+  quarantinedRuns(): readonly AgentLoopRunReference[] {
+    return [...this.#active.values()]
+      .filter((runner) => runner.quarantined)
+      .map((runner) => ({ caseId: runner.caseId, runId: runner.runId }));
+  }
+
   activeRuns(): readonly AgentLoopRunReference[] {
     return [...this.#active.values()].map((runner) => ({
       caseId: runner.caseId,
@@ -170,6 +176,10 @@ export class AgentLoopService {
   async #releaseRunner(runner: AgentLoopRunner, run: AgentRun): Promise<void> {
     if (run.state.kind === "active") {
       throw new AgentLoopStateError("An active Agent run cannot release case ownership");
+    }
+    if (runner.quarantined) {
+      await this.#dependencies.runs.quarantineOwned(runner.caseId, runner.runId);
+      return;
     }
     await this.#dependencies.mutations.run(runner.caseId, async () => {
       if (this.#active.get(runner.caseId) !== runner) return;
