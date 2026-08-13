@@ -1,10 +1,16 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { link, lstat, mkdir, open, readdir, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { constants } from "node:fs";
+import { link, lstat, open, readdir, unlink } from "node:fs/promises";
 import { z } from "zod";
+import {
+  AGENT_REPOSITORY_KEY_MARKER,
+  AgentRepositoryDirectoryPin,
+  agentRepositoryKeyPublicationPaths,
+  type CanonicalAgentRepositoryDirectory,
+} from "./agent-run-repository-key-path";
 
-export const AGENT_REPOSITORY_KEY_MARKER = ".agent-repository-key";
-const TEMPORARY_MARKER_PREFIX = ".haksulsomoim-agent-repository-key.";
+export { AGENT_REPOSITORY_KEY_MARKER } from "./agent-run-repository-key-path";
+
 const markerSchema = z.strictObject({
   version: z.literal(1),
   verifier: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -36,32 +42,44 @@ export class AgentRepositoryKeyMarkerError extends Error {
 }
 
 export class AgentRepositoryKeyVerifier {
-  readonly #directory: string;
+  readonly #directory: AgentRepositoryDirectoryPin;
   readonly #key: Uint8Array;
 
   constructor(directory: string, key: Uint8Array) {
-    this.#directory = directory;
+    this.#directory = new AgentRepositoryDirectoryPin(directory);
     this.#key = Uint8Array.from(key);
   }
 
   async verify(): Promise<void> {
-    await mkdir(this.#directory, { recursive: true, mode: 0o700 });
-    const lockKey = await realpath(this.#directory);
-    await this.#serialize(lockKey, () => this.#verifyOrInitialize());
+    let directory: CanonicalAgentRepositoryDirectory;
+    try {
+      directory = await this.#directory.resolve();
+    } catch (error) {
+      throw new AgentRepositoryKeyMarkerError(
+        "Agent repository directory cannot be canonicalized",
+        { cause: error },
+      );
+    }
+    await this.#assertPinnedDirectory(directory);
+    await this.#serialize(directory.path, async () => {
+      await this.#assertPinnedDirectory(directory);
+      await this.#verifyOrInitialize(directory);
+      await this.#assertPinnedDirectory(directory);
+    });
   }
 
-  async #verifyOrInitialize(): Promise<void> {
+  async #verifyOrInitialize(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
     try {
-      await this.#readAndVerify();
+      await this.#readAndVerify(directory);
       return;
     } catch (error) {
       if (!(error instanceof AgentRepositoryKeyMarkerError) || error.cause !== "missing") {
         throw error;
       }
     }
-    const entries = await readdir(this.#directory);
+    const entries = await readdir(directory.path);
     if (entries.includes(AGENT_REPOSITORY_KEY_MARKER)) {
-      await this.#readAndVerify();
+      await this.#readAndVerify(directory);
       return;
     }
     if (entries.length > 0) {
@@ -69,21 +87,24 @@ export class AgentRepositoryKeyVerifier {
         "Agent repository key marker is missing from a nonempty repository",
       );
     }
-    await this.#publish();
-    await this.#readAndVerify();
+    await this.#publish(directory);
+    await this.#readAndVerify(directory);
   }
 
-  async #readAndVerify(): Promise<void> {
+  async #readAndVerify(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
     let serialized: string;
     try {
-      serialized = await readFile(this.#path(), "utf8");
+      serialized = await this.#readMarker(directory);
     } catch (error) {
       if (isNodeError(error, "ENOENT")) {
         throw new AgentRepositoryKeyMarkerError("Agent repository key marker is missing", {
           cause: "missing",
         });
       }
-      throw error;
+      if (error instanceof AgentRepositoryKeyMarkerError) throw error;
+      throw new AgentRepositoryKeyMarkerError("Agent repository key marker is invalid", {
+        cause: error,
+      });
     }
     let verifier: string;
     try {
@@ -98,16 +119,35 @@ export class AgentRepositoryKeyVerifier {
     if (!timingSafeEqual(actual, expected)) throw new AgentRepositoryKeyMismatchError();
   }
 
-  async #publish(): Promise<void> {
+  async #readMarker(directory: CanonicalAgentRepositoryDirectory): Promise<string> {
+    const { marker } = agentRepositoryKeyPublicationPaths(directory.path, "read");
+    const file = await open(marker, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const metadata = await file.stat();
+      if (!metadata.isFile() || (metadata.mode & 0o777) !== 0o600) {
+        throw new AgentRepositoryKeyMarkerError("Agent repository key marker is not a safe file");
+      }
+      const serialized = await file.readFile("utf8");
+      const linked = await lstat(marker);
+      if (!linked.isFile() || linked.dev !== metadata.dev || linked.ino !== metadata.ino) {
+        throw new AgentRepositoryKeyMarkerError("Agent repository key marker identity changed");
+      }
+      return serialized;
+    } finally {
+      await file.close();
+    }
+  }
+
+  async #publish(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
     const serialized = JSON.stringify({ version: 1, verifier: this.#verifier() });
-    const temporaryPath = join(
-      dirname(this.#directory),
-      `${TEMPORARY_MARKER_PREFIX}${randomBytes(12).toString("hex")}.tmp`,
+    const paths = agentRepositoryKeyPublicationPaths(
+      directory.path,
+      randomBytes(12).toString("hex"),
     );
     let identity: FileIdentity | undefined;
     let published = false;
     try {
-      const file = await open(temporaryPath, "wx", 0o600);
+      const file = await open(paths.temporary, "wx", 0o600);
       try {
         const metadata = await file.stat();
         identity = { dev: metadata.dev, ino: metadata.ino };
@@ -116,19 +156,19 @@ export class AgentRepositoryKeyVerifier {
       } finally {
         await file.close();
       }
-      await this.#assertOwnedTemporary(temporaryPath, identity);
+      await this.#assertOwnedTemporary(paths.temporary, identity);
       try {
-        await link(temporaryPath, this.#path());
+        await link(paths.temporary, paths.marker);
         published = true;
       } catch (error) {
         if (!isNodeError(error, "EEXIST")) throw error;
       }
-      await this.#unlinkOwnedTemporary(temporaryPath, identity);
-      if (published) await this.#syncDirectory();
+      await this.#unlinkOwnedTemporary(paths.temporary, identity);
+      if (published) await this.#syncDirectory(directory);
     } catch (error) {
       if (identity === undefined) throw error;
       try {
-        await this.#unlinkOwnedTemporary(temporaryPath, identity);
+        await this.#unlinkOwnedTemporary(paths.temporary, identity);
       } catch (cleanupError) {
         throw new AggregateError(
           [error, cleanupError],
@@ -164,8 +204,10 @@ export class AgentRepositoryKeyVerifier {
       .digest("hex");
   }
 
-  #path(): string {
-    return join(this.#directory, AGENT_REPOSITORY_KEY_MARKER);
+  async #assertPinnedDirectory(directory: CanonicalAgentRepositoryDirectory): Promise<void> {
+    if (!(await this.#directory.matches(directory))) {
+      throw new AgentRepositoryKeyMarkerError("Agent repository canonical directory changed");
+    }
   }
 
   async #serialize(lockKey: string, operation: () => Promise<void>): Promise<void> {
@@ -185,8 +227,8 @@ export class AgentRepositoryKeyVerifier {
     }
   }
 
-  async #syncDirectory(): Promise<void> {
-    const directory = await open(this.#directory, "r");
+  async #syncDirectory(canonical: CanonicalAgentRepositoryDirectory): Promise<void> {
+    const directory = await open(canonical.path, "r");
     try {
       await directory.sync();
     } finally {
