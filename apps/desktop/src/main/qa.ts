@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { app } from "electron";
 import type { KoreanLawMcpAdapter } from "../integrations/korean-law-mcp/korean-law-mcp";
@@ -63,6 +64,10 @@ function createQaOcr(): Promise<LocalOcrPort> {
 
 function createQaLaw(): KoreanLawMcpAdapter {
   let call = 0;
+  const unresolvedTool = process.argv.includes("--qa-unresolved-tool");
+  const unresolvedMarker = process.argv
+    .find((argument) => argument.startsWith("--qa-unresolved-marker="))
+    ?.slice("--qa-unresolved-marker=".length);
   return {
     tools: () => ["search_law"],
     async discover() {
@@ -70,6 +75,11 @@ function createQaLaw(): KoreanLawMcpAdapter {
     },
     async execute() {
       call += 1;
+      if (unresolvedTool && call > 1) {
+        if (unresolvedMarker !== undefined)
+          await writeFile(unresolvedMarker, "entered", { mode: 0o600 });
+        return new Promise<never>(() => undefined);
+      }
       const ids = [
         "230af24aa64ea4819039b5a7664367ba865262a9324d8636f427f4c3f21681bf",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

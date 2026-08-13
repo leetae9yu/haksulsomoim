@@ -70,7 +70,7 @@ export type KoreanLawMcpResult =
 
 export interface KoreanLawMcpAdapter {
   tools(): readonly KoreanLawToolName[];
-  discover(): Promise<readonly KoreanLawToolName[]>;
+  discover(context?: AgentToolExecutionContext): Promise<readonly KoreanLawToolName[]>;
   execute(
     tool: string,
     arguments_: Record<string, unknown>,
@@ -183,11 +183,15 @@ export function createKoreanLawMcpAdapter(
   return {
     tools: () => ALLOWED_KOREAN_LAW_TOOLS,
 
-    async discover() {
+    async discover(context) {
+      context?.signal.throwIfAborted();
       if (credential === undefined || credential === "") return [];
       try {
         await connect();
-        return discoveredToolNames(await (client as KoreanLawMcpClient).listTools());
+        context?.signal.throwIfAborted();
+        const discovered = await (client as KoreanLawMcpClient).listTools();
+        context?.signal.throwIfAborted();
+        return discoveredToolNames(discovered);
       } catch {
         return [];
       }

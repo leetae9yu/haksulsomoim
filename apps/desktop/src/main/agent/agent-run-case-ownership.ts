@@ -1,3 +1,4 @@
+import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import { type AgentRun, agentRunSchema } from "./agent-contracts";
 import {
   AgentCaseClaimInvariantError,
@@ -81,8 +82,14 @@ export class AgentRunCaseOwnership {
     }
   }
 
-  quarantine(caseId: string, runId: string): Promise<void> {
-    return this.#claims.quarantine(caseId, runId);
+  transitionToolLease(transition: AgentToolLeaseTransition): Promise<void> {
+    if (transition.kind === "executing") return this.#claims.beginToolLease(transition.lease);
+    if (transition.kind === "settled") return this.#claims.settleToolLease(transition.lease);
+    return this.#claims.quarantine(
+      transition.lease.caseId,
+      transition.lease.runId,
+      transition.lease,
+    );
   }
 
   async release(caseId: string, runId: string): Promise<void> {

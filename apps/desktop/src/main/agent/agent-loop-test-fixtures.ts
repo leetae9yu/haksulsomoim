@@ -1,6 +1,7 @@
 import type { ApprovedAgentDecisionContext } from "../../integrations/agent-provider/agent-provider";
 import { Redactor } from "../../security/redaction";
 import { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
+import type { AgentToolLease, AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import { type AgentGoal, type AgentRun, agentGoalSchema } from "./agent-contracts";
 import {
   type AgentLoopClock,
@@ -24,6 +25,7 @@ export class MemoryAgentRunStore {
   readonly snapshots = new Map<string, AgentRunSnapshot>();
   readonly saves: AgentRunSnapshot[] = [];
   readonly #owners = new Map<string, string>();
+  readonly #leases = new Map<string, AgentToolLease>();
 
   async create(run: AgentRun): Promise<void> {
     this.snapshots.set(run.runId, structuredClone({ run, cursor: 0 }));
@@ -40,9 +42,21 @@ export class MemoryAgentRunStore {
     }
   }
 
-  async quarantineOwned(caseId: string, runId: string): Promise<void> {
-    if (this.#owners.get(caseId) !== runId)
-      throw new AgentCaseClaimInvariantError("Agent owner mismatch");
+  async transitionToolLease(transition: AgentToolLeaseTransition): Promise<void> {
+    const { lease } = transition;
+    const current = this.#leases.get(lease.caseId);
+    if (transition.kind === "executing") {
+      if (this.#owners.get(lease.caseId) !== lease.runId || current !== undefined) {
+        throw new AgentCaseClaimInvariantError("Agent tool lease conflict");
+      }
+      this.#leases.set(lease.caseId, transition.lease);
+      return;
+    }
+    if (current === undefined || current.toolExecutionToken !== lease.toolExecutionToken) {
+      throw new AgentCaseClaimInvariantError("Agent tool lease mismatch");
+    }
+    if (transition.kind === "settled") this.#leases.delete(lease.caseId);
+    else this.#leases.set(lease.caseId, { ...current, state: "quarantined" });
   }
 
   async releaseOwned(caseId: string, runId: string): Promise<void> {

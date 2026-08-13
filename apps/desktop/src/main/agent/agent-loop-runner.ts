@@ -26,6 +26,7 @@ import {
   type AgentToolExecutionOutcome,
   systemExecutionTimer,
 } from "./agent-tool-execution";
+import { createExecutingToolLease, settleToolLeaseOutcome } from "./agent-tool-lease-lifecycle";
 import type { AgentToolExecution } from "./agent-tool-registry";
 
 type ProviderTurn =
@@ -44,15 +45,16 @@ async function requestProviderTurn(
   }
 }
 
-async function awaitCancellation(requested: Promise<void>): Promise<ProviderTurn> {
-  await requested;
-  return { kind: "cancelled" };
+function awaitCancellation(requested: Promise<void>): Promise<ProviderTurn> {
+  return requested.then(() => ({ kind: "cancelled" }));
 }
 
 export class AgentLoopRunner {
   readonly #dependencies: AgentLoopRuntimeDependencies;
   readonly #control: AgentLoopControl;
   #activeTool: AgentToolExecutionBoundary<AgentToolExecution> | undefined;
+  #toolSettlement: Promise<AgentToolExecutionOutcome<AgentToolExecution>> | undefined;
+  #authoritativeSettlement: Promise<void> | undefined;
   #quarantined = false;
 
   constructor(
@@ -86,6 +88,10 @@ export class AgentLoopRunner {
 
   get quarantined(): boolean {
     return this.#quarantined;
+  }
+
+  get authoritativeSettlement(): Promise<void> | undefined {
+    return this.#authoritativeSettlement;
   }
 
   async drive(): Promise<AgentRun> {
@@ -193,20 +199,22 @@ export class AgentLoopRunner {
       }
       // A durably persisted host pause or cancellation remains authoritative.
     }
-    const toolOutcome = await this.#activeTool?.outcome;
+    const toolOutcome = await this.#toolSettlement;
     if (toolOutcome?.kind === "interrupted") this.#quarantined = toolOutcome.quarantined;
     if (persistenceFailure !== undefined) throw persistenceFailure;
     if (run === undefined) throw new AgentLoopStateError("Agent settlement did not persist");
     return run;
   }
 
-  #executeTool(
+  async #executeTool(
     accepted: Extract<Awaited<ReturnType<typeof acceptAgentDecision>>, { kind: "execute" }>,
   ): Promise<AgentToolExecutionOutcome<AgentToolExecution>> {
     const timeoutMs = Math.max(
       1,
       Math.min(this.#dependencies.toolTimeoutMs ?? 30_000, accepted.run.budget.durationMsRemaining),
     );
+    const lease = createExecutingToolLease(accepted.run, accepted.call, timeoutMs);
+    await this.#dependencies.runs.transitionToolLease({ kind: "executing", lease });
     const boundary = new AgentToolExecutionBoundary(
       (context) =>
         this.#dependencies.tools.execute(
@@ -223,7 +231,17 @@ export class AgentLoopRunner {
       },
     );
     this.#activeTool = boundary;
-    return boundary.outcome;
+    this.#toolSettlement = boundary.outcome.then(async (outcome) => {
+      const settlement = await settleToolLeaseOutcome(
+        this.#dependencies.runs,
+        lease,
+        boundary,
+        outcome,
+      );
+      this.#authoritativeSettlement = settlement.authoritativeSettlement;
+      return outcome;
+    });
+    return this.#toolSettlement;
   }
 
   #stopping(): boolean {

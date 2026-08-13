@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { ApprovedAgentDecisionContext } from "../../integrations/agent-provider/agent-provider";
 import { Redactor } from "../../security/redaction";
 import { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
+import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import type { AgentRun } from "./agent-contracts";
 import { type AgentLoopProvider, AgentLoopService } from "./agent-loop-service";
 import { civilGoal, DIGEST_A, DIGEST_C, MutableProjectionReader } from "./agent-loop-test-fixtures";
@@ -32,8 +33,8 @@ class FaultingRunStore {
     return this.#repository.createOwned(run);
   }
 
-  quarantineOwned(caseId: string, runId: string): Promise<void> {
-    return this.#repository.quarantineOwned(caseId, runId);
+  transitionToolLease(transition: AgentToolLeaseTransition): Promise<void> {
+    return this.#repository.transitionToolLease(transition);
   }
 
   async releaseOwned(caseId: string, runId: string): Promise<void> {

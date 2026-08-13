@@ -1,13 +1,14 @@
 import type { ApprovedAgentDecisionContext } from "../../integrations/agent-provider/agent-provider";
 import type { RedactedText } from "../../security/redaction";
+import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import type { AgentGoal, AgentRun } from "./agent-contracts";
 import type { AgentRunSnapshot } from "./agent-run-repository";
 
 export interface AgentRunStore {
   create(run: AgentRun): Promise<void>;
   createOwned(run: AgentRun): Promise<void>;
+  transitionToolLease(transition: AgentToolLeaseTransition): Promise<void>;
   releaseOwned(caseId: string, runId: string): Promise<void>;
-  quarantineOwned(caseId: string, runId: string): Promise<void>;
   load(runId: string): Promise<AgentRunSnapshot>;
   save(snapshot: AgentRunSnapshot): Promise<void>;
 }

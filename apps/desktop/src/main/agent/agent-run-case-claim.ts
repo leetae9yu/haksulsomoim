@@ -1,26 +1,26 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { link, open, readFile, realpath, unlink } from "node:fs/promises";
+import { createHmac, randomBytes } from "node:crypto";
+import { access, link, open, realpath, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { z } from "zod";
+import {
+  type AgentCaseClaim,
+  parseAgentCaseClaim,
+  readAgentCaseClaim,
+  serializeAgentCaseClaim,
+} from "./agent-case-claim-record";
+import {
+  AgentClaimTransactionBusyError,
+  withClaimTransaction,
+} from "./agent-case-claim-transaction";
+import {
+  type AgentToolLease,
+  type AgentToolLeaseIdentity,
+  agentToolLeaseSchema,
+  sameToolLease,
+} from "./agent-case-tool-lease";
 import { agentRunIdSchema, caseIdSchema } from "./agent-contracts-core";
 import { AgentRepositoryKeyVerifier } from "./agent-run-repository-key";
 
-const claimSchema = z
-  .strictObject({
-    caseId: caseIdSchema,
-    runId: agentRunIdSchema,
-  })
-  .readonly();
-const encryptedClaimSchema = z.strictObject({
-  version: z.literal(1),
-  nonce: z.string().min(1),
-  ciphertext: z.string().min(1),
-  authTag: z.string().min(1),
-});
 const claimTails = new Map<string, Promise<void>>();
-const quarantinedClaims = new Set<string>();
-
-type AgentCaseClaim = z.infer<typeof claimSchema>;
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
@@ -60,8 +60,10 @@ export class EncryptedAgentCaseClaimStore {
   }
 
   async acquire(caseId: string, runId: string): Promise<void> {
-    const claim = claimSchema.parse({ caseId, runId });
-    await this.#withCase(claim.caseId, (locator) => this.#publish(claim, locator));
+    const claim = parseAgentCaseClaim({ caseId, runId, toolLease: null });
+    await this.#withCase(claim.caseId, (locator) =>
+      this.#mutate(locator, () => this.#publish(claim, locator, true)),
+    );
   }
 
   async owner(caseId: string): Promise<string | undefined> {
@@ -72,38 +74,85 @@ export class EncryptedAgentCaseClaimStore {
     });
   }
 
-  async quarantine(caseId: string, runId: string): Promise<void> {
-    const expected = claimSchema.parse({ caseId, runId });
-    await this.#withCase(expected.caseId, async (locator, lockKey) => {
-      const claim = await this.#read(expected.caseId, locator);
-      if (claim?.runId !== expected.runId) {
-        throw new AgentCaseClaimInvariantError("Agent quarantine owner mismatch");
+  async beginToolLease(lease: AgentToolLease): Promise<void> {
+    const parsed = agentToolLeaseSchema.parse(lease);
+    await this.#updateLease(parsed.caseId, parsed.runId, (claim) => {
+      if (claim.toolLease !== null) throw new AgentCaseAlreadyClaimedError();
+      return { ...claim, toolLease: parsed };
+    });
+  }
+
+  async settleToolLease(expected: AgentToolLeaseIdentity): Promise<void> {
+    await this.#updateLease(expected.caseId, expected.runId, (claim) => {
+      if (claim.toolLease === null || !sameToolLease(claim.toolLease, expected)) {
+        throw new AgentCaseClaimInvariantError("Agent tool lease identity mismatch");
       }
-      quarantinedClaims.add(lockKey);
+      return { ...claim, toolLease: null };
+    });
+  }
+
+  async quarantine(
+    caseId: string,
+    runId: string,
+    identity?: AgentToolLeaseIdentity,
+  ): Promise<void> {
+    const fallback = agentToolLeaseSchema.parse({
+      caseId,
+      runId,
+      stepId: "unresolved-tool",
+      toolExecutionToken: "unresolved-tool",
+      startedAt: Date.now(),
+      deadline: Date.now(),
+      state: "quarantined",
+    });
+    const expected = identity ?? fallback;
+    await this.#updateLease(caseId, runId, (claim) => {
+      if (claim.toolLease !== null && !sameToolLease(claim.toolLease, expected)) {
+        throw new AgentCaseClaimInvariantError("Agent quarantine lease mismatch");
+      }
+      return {
+        ...claim,
+        toolLease:
+          claim.toolLease === null
+            ? {
+                ...expected,
+                startedAt: Date.now(),
+                deadline: Date.now(),
+                state: "quarantined" as const,
+              }
+            : { ...claim.toolLease, state: "quarantined" as const },
+      };
     });
   }
 
   async isQuarantined(caseId: string): Promise<boolean> {
     const parsedCaseId = caseIdSchema.parse(caseId);
-    return this.#withCase(parsedCaseId, (_locator, lockKey) =>
-      Promise.resolve(quarantinedClaims.has(lockKey)),
-    );
+    return this.#withCase(parsedCaseId, async (locator) => {
+      try {
+        await access(join(this.#directory, `${locator}.claim-lock`));
+        return true;
+      } catch (error) {
+        if (!isNodeError(error, "ENOENT")) throw error;
+      }
+      const claim = await this.#read(parsedCaseId, locator);
+      return claim !== undefined && claim.toolLease !== null;
+    });
   }
 
   async release(caseId: string, runId: string): Promise<void> {
-    const expected = claimSchema.parse({ caseId, runId });
-    await this.#withCase(expected.caseId, async (locator, lockKey) => {
-      if (quarantinedClaims.has(lockKey)) {
-        throw new AgentCaseAlreadyClaimedError();
-      }
-      const claim = await this.#read(expected.caseId, locator);
-      if (claim === undefined) return;
-      if (claim.runId !== expected.runId) {
-        throw new AgentCaseClaimInvariantError("Agent case claim belongs to another run");
-      }
-      await unlink(this.#path(locator));
-      await this.#syncDirectory();
-    });
+    const expected = { caseId: caseIdSchema.parse(caseId), runId: agentRunIdSchema.parse(runId) };
+    await this.#withCase(expected.caseId, (locator) =>
+      this.#mutate(locator, async () => {
+        const claim = await this.#read(expected.caseId, locator);
+        if (claim === undefined) return;
+        if (claim.runId !== expected.runId) {
+          throw new AgentCaseClaimInvariantError("Agent case claim belongs to another run");
+        }
+        if (claim.toolLease !== null) throw new AgentCaseAlreadyClaimedError();
+        await unlink(this.#path(locator));
+        await this.#syncDirectory();
+      }),
+    );
   }
 
   #locator(caseId: string): string {
@@ -140,44 +189,45 @@ export class EncryptedAgentCaseClaimStore {
     }
   }
 
-  async #read(caseId: string, locator: string): Promise<AgentCaseClaim | undefined> {
-    let serialized: string;
+  async #updateLease(
+    caseId: string,
+    runId: string,
+    update: (claim: AgentCaseClaim) => AgentCaseClaim,
+  ): Promise<void> {
+    const parsedCaseId = caseIdSchema.parse(caseId);
+    const parsedRunId = agentRunIdSchema.parse(runId);
+    await this.#withCase(parsedCaseId, (locator) =>
+      this.#mutate(locator, async () => {
+        const claim = await this.#read(parsedCaseId, locator);
+        if (claim?.runId !== parsedRunId) {
+          throw new AgentCaseClaimInvariantError("Agent tool lease owner mismatch");
+        }
+        await this.#publish(parseAgentCaseClaim(update(claim)), locator, false);
+      }),
+    );
+  }
+
+  async #mutate<T>(locator: string, operation: () => Promise<T>): Promise<T> {
     try {
-      serialized = await readFile(this.#path(locator), "utf8");
+      return await withClaimTransaction(this.#directory, locator, operation);
     } catch (error) {
-      if (isNodeError(error, "ENOENT")) return undefined;
+      if (error instanceof AgentClaimTransactionBusyError) {
+        throw new AgentCaseAlreadyClaimedError({ cause: error });
+      }
       throw error;
     }
-    const record = encryptedClaimSchema.parse(JSON.parse(serialized));
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      this.#key,
-      Buffer.from(record.nonce, "base64"),
-    );
-    decipher.setAAD(Buffer.from(locator));
-    decipher.setAuthTag(Buffer.from(record.authTag, "base64"));
-    const plaintext = Buffer.concat([
-      decipher.update(Buffer.from(record.ciphertext, "base64")),
-      decipher.final(),
-    ]).toString("utf8");
-    const claim = claimSchema.parse(JSON.parse(plaintext));
-    if (claim.caseId !== caseId) {
+  }
+
+  async #read(caseId: string, locator: string): Promise<AgentCaseClaim | undefined> {
+    const claim = await readAgentCaseClaim(this.#path(locator), this.#key, locator);
+    if (claim !== undefined && claim.caseId !== caseId) {
       throw new AgentCaseClaimInvariantError("Agent case claim locator mismatch");
     }
     return claim;
   }
 
-  async #publish(claim: AgentCaseClaim, locator: string): Promise<void> {
-    const nonce = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.#key, nonce);
-    cipher.setAAD(Buffer.from(locator));
-    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(claim)), cipher.final()]);
-    const serialized = JSON.stringify({
-      version: 1,
-      nonce: nonce.toString("base64"),
-      ciphertext: ciphertext.toString("base64"),
-      authTag: cipher.getAuthTag().toString("base64"),
-    });
+  async #publish(claim: AgentCaseClaim, locator: string, exclusive: boolean): Promise<void> {
+    const serialized = serializeAgentCaseClaim(claim, this.#key, locator);
     const temporaryPath = join(this.#directory, `.${randomBytes(12).toString("hex")}.tmp`);
     try {
       const file = await open(temporaryPath, "wx", 0o600);
@@ -187,12 +237,16 @@ export class EncryptedAgentCaseClaimStore {
       } finally {
         await file.close();
       }
-      await link(temporaryPath, this.#path(locator));
-      await unlink(temporaryPath);
+      if (exclusive) {
+        await link(temporaryPath, this.#path(locator));
+        await unlink(temporaryPath);
+      } else {
+        await rename(temporaryPath, this.#path(locator));
+      }
       await this.#syncDirectory();
     } catch (error) {
       await unlink(temporaryPath).catch(() => undefined);
-      if (isNodeError(error, "EEXIST")) {
+      if (exclusive && isNodeError(error, "EEXIST")) {
         throw new AgentCaseAlreadyClaimedError({ cause: error });
       }
       throw error;

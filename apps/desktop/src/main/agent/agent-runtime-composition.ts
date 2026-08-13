@@ -16,7 +16,7 @@ import {
 
 export type AgentRuntimeExternalDependencies = Readonly<{
   law: KoreanLawMcpAdapter;
-  provider(): Promise<CodexAgentDecisionProvider>;
+  provider(signal?: AbortSignal): Promise<CodexAgentDecisionProvider>;
 }>;
 
 function digest(value: unknown): string {

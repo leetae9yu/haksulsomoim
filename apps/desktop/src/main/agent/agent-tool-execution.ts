@@ -42,6 +42,7 @@ export class AgentToolExecutionBoundary<Result> {
   readonly #timer: AgentExecutionTimer;
   readonly #graceMs: number;
   readonly #outcome: Promise<AgentToolExecutionOutcome<Result>>;
+  readonly #settled: Promise<void>;
   #resolve!: (outcome: AgentToolExecutionOutcome<Result>) => void;
   #cancelDeadline: () => void;
   #cancelGrace?: () => void;
@@ -75,7 +76,7 @@ export class AgentToolExecutionBoundary<Result> {
     } catch (error) {
       execution = Promise.reject(error);
     }
-    execution.then(
+    this.#settled = execution.then(
       (value) => this.#settle(value),
       (error) => this.#reject(error),
     );
@@ -84,6 +85,10 @@ export class AgentToolExecutionBoundary<Result> {
 
   get outcome(): Promise<AgentToolExecutionOutcome<Result>> {
     return this.#outcome;
+  }
+
+  get settled(): Promise<void> {
+    return this.#settled;
   }
 
   interrupt(reason: AgentToolInterruption): Promise<AgentToolExecutionOutcome<Result>> {

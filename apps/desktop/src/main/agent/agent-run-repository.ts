@@ -1,3 +1,4 @@
+import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import type { AgentRun, AgentStep } from "./agent-contracts";
 import { agentRunSchema } from "./agent-contracts";
 import { EncryptedAgentCaseClaimStore } from "./agent-run-case-claim";
@@ -193,11 +194,8 @@ export class AgentRunRepository {
     return this.#ownership.recover(caseId);
   }
 
-  quarantineOwned(caseId: string, runId: string): Promise<void> {
-    if (caseId.length === 0 || runId.length === 0) {
-      throw new TypeError("Agent case and run IDs are required");
-    }
-    return this.#ownership.quarantine(caseId, runId);
+  transitionToolLease(transition: AgentToolLeaseTransition): Promise<void> {
+    return this.#ownership.transitionToolLease(transition);
   }
 
   releaseOwned(caseId: string, runId: string): Promise<void> {

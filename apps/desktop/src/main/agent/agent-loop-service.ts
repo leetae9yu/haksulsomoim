@@ -1,4 +1,5 @@
 import { type AgentRun, agentGoalSchema, approvalDecisionSchema } from "./agent-contracts";
+import { afterAuthoritativeToolSettlement } from "./agent-late-tool-settlement";
 import {
   cancelAgentRun,
   pauseIdleAgentRun,
@@ -178,7 +179,13 @@ export class AgentLoopService {
       throw new AgentLoopStateError("An active Agent run cannot release case ownership");
     }
     if (runner.quarantined) {
-      await this.#dependencies.runs.quarantineOwned(runner.caseId, runner.runId);
+      afterAuthoritativeToolSettlement(runner, () =>
+        this.#dependencies.mutations.run(runner.caseId, async () => {
+          if (this.#active.get(runner.caseId) !== runner) return;
+          await this.#dependencies.runs.releaseOwned(runner.caseId, runner.runId);
+          this.#active.delete(runner.caseId);
+        }),
+      );
       return;
     }
     await this.#dependencies.mutations.run(runner.caseId, async () => {

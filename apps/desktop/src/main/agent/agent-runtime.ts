@@ -1,10 +1,13 @@
+import { awaitRuntimeDisposal, type RuntimeDeadlineTimer } from "../runtime-deadline";
 import type { AgentRun } from "./agent-contracts";
+import { afterAuthoritativeToolSettlement } from "./agent-late-tool-settlement";
 import { AgentLoopRunner } from "./agent-loop-runner";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
 import { AgentLoopService } from "./agent-loop-service";
 import type { AgentLoopStartInput } from "./agent-loop-types";
 import { AgentRunInvariantError, type AgentRunRepository } from "./agent-run-repository";
 import type { AgentRuntimeExternalDependencies } from "./agent-runtime-composition";
+import { initializeAgentIntegrations } from "./agent-runtime-initialization";
 import type {
   AgentResumeInput,
   AgentRuntimeBeginResult,
@@ -41,6 +44,9 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
   readonly #resumed = new Map<string, AgentLoopRunner>();
   readonly #listeners = new Set<(run: AgentRun) => void>();
   readonly #abort = new AbortController();
+  readonly #timer: RuntimeDeadlineTimer | undefined;
+  readonly #initializationDeadlineMs: number;
+  readonly #disposalDeadlineMs: number;
   #availability?: Promise<AgentUnavailableReason | undefined>;
   #disposal?: Promise<void>;
   #disposed = false;
@@ -49,8 +55,16 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     dependencies: AgentLoopRuntimeDependencies,
     external: AgentRuntimeExternalDependencies,
     runs: AgentRunRepository,
+    lifecycle: Readonly<{
+      timer?: RuntimeDeadlineTimer | undefined;
+      initializationDeadlineMs?: number;
+      disposalDeadlineMs?: number;
+    }> = {},
   ) {
     this.#dependencies = { ...dependencies, publish: (run) => this.#publish(run) };
+    this.#timer = lifecycle.timer;
+    this.#initializationDeadlineMs = lifecycle.initializationDeadlineMs ?? 30_000;
+    this.#disposalDeadlineMs = lifecycle.disposalDeadlineMs ?? 500;
     this.#external = external;
     this.#runs = runs;
     this.#service = new AgentLoopService(this.#dependencies);
@@ -138,7 +152,11 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     if (this.#disposal !== undefined) return this.#disposal;
     this.#disposed = true;
     this.#abort.abort();
-    this.#disposal = this.#settle();
+    this.#disposal = awaitRuntimeDisposal(this.#settle(), {
+      phase: "agent-disposal",
+      deadlineMs: this.#disposalDeadlineMs,
+      timer: this.#timer,
+    });
     return this.#disposal;
   }
 
@@ -202,16 +220,12 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
 
   async #initialize(signal: AbortSignal): Promise<AgentUnavailableReason | undefined> {
     this.#assertAdmitted(signal);
-    this.#availability ??= (async () => {
-      const [mcp, provider] = await Promise.allSettled([
-        this.#external.law.discover(),
-        this.#external.provider(),
-      ]);
-      if (provider.status === "rejected") return "provider-initialization";
-      if (mcp.status === "rejected" || mcp.value.length === 0) return "mcp-initialization";
-      if (typeof provider.value.nextDecision !== "function") return "provider-initialization";
-      return undefined;
-    })();
+    this.#availability ??= initializeAgentIntegrations(this.#external, {
+      signal: this.#abort.signal,
+      deadlineMs: this.#initializationDeadlineMs,
+      timer: this.#timer,
+    });
+    this.#availability.catch(() => undefined);
     const availability = await this.#availability;
     this.#assertAdmitted(signal);
     return availability;
@@ -234,15 +248,14 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
 
   async #releaseResumed(runner: AgentLoopRunner, run: AgentRun): Promise<void> {
     if (run.state.kind === "active") throw new AgentRunInvariantError("Cannot release active run");
-    if (runner.quarantined) {
-      await this.#runs.quarantineOwned(runner.caseId, runner.runId);
-      return;
-    }
-    await this.#dependencies.mutations.run(runner.caseId, async () => {
-      if (this.#resumed.get(runner.caseId) !== runner) return;
-      await this.#runs.releaseOwned(runner.caseId, runner.runId);
-      this.#resumed.delete(runner.caseId);
-    });
+    const release = () =>
+      this.#dependencies.mutations.run(runner.caseId, async () => {
+        if (this.#resumed.get(runner.caseId) !== runner) return;
+        await this.#runs.releaseOwned(runner.caseId, runner.runId);
+        this.#resumed.delete(runner.caseId);
+      });
+    if (runner.quarantined) afterAuthoritativeToolSettlement(runner, release);
+    else await release();
   }
 
   #publish(run: AgentRun): void {

@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 describe("Agent runtime initialization ownership", () => {
-  test("waits for deferred initialization before disposal and rejects late starts", async () => {
+  test("aborts deferred initialization while disposing resources concurrently", async () => {
     const root = await mkdtemp(join(tmpdir(), "haksul-agent-init-dispose-"));
     roots.push(root);
     let signalInitialization!: () => void;
@@ -98,9 +98,9 @@ describe("Agent runtime initialization ownership", () => {
     expect(decisionCalls).toBe(0);
     expect(providerCloseCalls).toBe(1);
     expect(lawCloseCalls).toBe(1);
-    expect(events.indexOf("starts-settled")).toBeLessThan(events.indexOf("provider-closed"));
-    expect(events.indexOf("starts-settled")).toBeLessThan(events.indexOf("law-closed"));
-    expect(events.at(-1)).toBe("disposed");
+    expect(events.indexOf("starts-settled")).toBeLessThan(events.indexOf("disposed"));
+    expect(events.indexOf("provider-closed")).toBeLessThan(events.indexOf("disposed"));
+    expect(events.indexOf("law-closed")).toBeLessThan(events.indexOf("disposed"));
     let lateAdmissionError: unknown;
     try {
       await runtime.agent.start(input);

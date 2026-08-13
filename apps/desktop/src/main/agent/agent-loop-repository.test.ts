@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Redactor } from "../../security/redaction";
 import { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
+import type { AgentToolLeaseTransition } from "./agent-case-tool-lease";
 import type { AgentRun } from "./agent-contracts";
 import { AgentLoopService } from "./agent-loop-service";
 import {
@@ -35,8 +36,8 @@ class ObservedRunStore implements AgentRunStore {
     return this.#repository.createOwned(run);
   }
 
-  quarantineOwned(caseId: string, runId: string): Promise<void> {
-    return this.#repository.quarantineOwned(caseId, runId);
+  transitionToolLease(transition: AgentToolLeaseTransition): Promise<void> {
+    return this.#repository.transitionToolLease(transition);
   }
 
   releaseOwned(caseId: string, runId: string): Promise<void> {

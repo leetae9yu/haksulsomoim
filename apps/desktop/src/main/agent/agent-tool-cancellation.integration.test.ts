@@ -77,6 +77,15 @@ describe("Agent tool execution ownership", () => {
         },
       },
     });
+    let releasedOwnership!: () => void;
+    const ownershipReleased = new Promise<void>((resolve) => {
+      releasedOwnership = resolve;
+    });
+    const releaseOwned = runs.releaseOwned.bind(runs);
+    runs.releaseOwned = async (caseId, runId) => {
+      await releaseOwned(caseId, runId);
+      releasedOwnership();
+    };
     const first = await service.begin({
       caseId: "case-1",
       goal: civilGoal(),
@@ -104,9 +113,10 @@ describe("Agent tool execution ownership", () => {
     release.resolve(lawResult);
     await lateSettled.promise;
     await first.completion;
+    await ownershipReleased;
     const persisted = await runs.load(first.initial.runId);
     expect(persisted.run.steps.some((step) => step.kind === "tool-finished")).toBe(false);
-    expect(service.activeRuns()).toHaveLength(1);
+    expect(service.activeRuns()).toEqual([]);
   });
 
   test("releases ownership after a cooperative aborted tool settles", async () => {

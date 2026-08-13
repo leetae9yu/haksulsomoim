@@ -28,6 +28,8 @@ import {
 import { RuntimeCaseMutationQueue } from "./runtime-case-mutation-queue";
 import { EncryptedRuntimeCaseRepository } from "./runtime-case-repository";
 import { CaseRuntimeService } from "./runtime-case-service";
+import { awaitRuntimeDeadline, type RuntimeDeadlineTimer } from "./runtime-deadline";
+import { LazyRuntimeIntegration } from "./runtime-integration-lifecycle";
 
 export interface DesktopRuntime {
   readonly handlers: DesktopHandlers;
@@ -39,8 +41,13 @@ export interface DesktopRuntime {
 export interface DesktopRuntimeFactories {
   readonly loadKey?: (userDataPath: string) => Promise<Uint8Array>;
   readonly createLaw?: () => KoreanLawMcpAdapter;
-  readonly createOcr?: () => Promise<LocalOcrPort>;
-  readonly createProvider?: () => Promise<CodexAgentProvider>;
+  readonly createOcr?: (signal?: AbortSignal) => Promise<LocalOcrPort>;
+  readonly createProvider?: (signal?: AbortSignal) => Promise<CodexAgentProvider>;
+  readonly lifecycle?: Readonly<{
+    timer?: RuntimeDeadlineTimer | undefined;
+    initializationDeadlineMs?: number;
+    disposalDeadlineMs?: number;
+  }>;
   readonly agentExecution?: Readonly<{
     timer?: AgentExecutionTimer;
     toolTimeoutMs?: number;
@@ -78,18 +85,27 @@ export async function createDesktopRuntime(
   const redactor = new Redactor(masterKey);
   const mutations = new RuntimeCaseMutationQueue();
 
-  let ocrPromise: Promise<LocalOcrPort> | undefined;
-  const getOcr = () => {
-    ocrPromise ??= (factories.createOcr ?? createLocalKorEngOcr)();
-    return ocrPromise;
-  };
-  let providerPromise: Promise<CodexAgentProvider> | undefined;
-  const getProvider = () => {
-    const createProvider =
-      factories.createProvider ?? (() => createCodexAgentProvider(() => launchCodexAppServer()));
-    providerPromise ??= createProvider();
-    return providerPromise;
-  };
+  const lifecycleAbort = new AbortController();
+  const initializationDeadlineMs = factories.lifecycle?.initializationDeadlineMs ?? 30_000;
+  const disposalDeadlineMs = factories.lifecycle?.disposalDeadlineMs ?? 500;
+  const timer = factories.lifecycle?.timer;
+  const ocr = new LazyRuntimeIntegration({
+    factory: factories.createOcr ?? (() => createLocalKorEngOcr()),
+    cleanup: (resource: LocalOcrPort) => resource.terminate(),
+    signal: lifecycleAbort.signal,
+    timer,
+    deadlineMs: initializationDeadlineMs,
+  });
+  const provider = new LazyRuntimeIntegration({
+    factory:
+      factories.createProvider ?? (() => createCodexAgentProvider(() => launchCodexAppServer())),
+    cleanup: (resource: CodexAgentProvider) => resource.dispose(),
+    signal: lifecycleAbort.signal,
+    timer,
+    deadlineMs: initializationDeadlineMs,
+  });
+  const getOcr = () => ocr.get();
+  const getProvider = () => provider.get();
 
   const service = new CaseRuntimeService({
     repository,
@@ -117,6 +133,7 @@ export async function createDesktopRuntime(
     }),
     external,
     agentRuns,
+    factories.lifecycle,
   );
   const agentLifecycle = new AgentLifecycleRuntime(agent, agentRuns, agentArtifacts, mutations);
   let disposal: Promise<void> | undefined;
@@ -127,25 +144,16 @@ export async function createDesktopRuntime(
     agentLifecycle,
     dispose() {
       disposal ??= (async () => {
-        const agentResult = await Promise.allSettled([agent.dispose()]);
-        const disposals: Promise<unknown>[] = [law.close()];
-        if (ocrPromise !== undefined) {
-          disposals.push(
-            ocrPromise.then(
-              (ocr) => ocr.terminate(),
-              () => undefined,
-            ),
-          );
-        }
-        if (providerPromise !== undefined) {
-          disposals.push(
-            providerPromise.then(
-              (provider) => provider.dispose(),
-              () => undefined,
-            ),
-          );
-        }
-        const results = [...agentResult, ...(await Promise.allSettled(disposals))];
+        lifecycleAbort.abort();
+        const operations = [agent.dispose(), law.close(), ocr.dispose(), provider.dispose()];
+        const bounded = operations.map((operation) =>
+          awaitRuntimeDeadline(operation, {
+            phase: "desktop-disposal",
+            deadlineMs: disposalDeadlineMs,
+            timer,
+          }),
+        );
+        const results = await Promise.allSettled(bounded);
         const failures = results
           .filter((result): result is PromiseRejectedResult => result.status === "rejected")
           .map((result) => result.reason);
