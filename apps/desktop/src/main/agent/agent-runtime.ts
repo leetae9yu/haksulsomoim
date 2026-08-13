@@ -30,7 +30,16 @@ export interface DesktopAgentRuntime {
   dispose(): Promise<void>;
 }
 
-type TrackedTask = Readonly<{ caseId: string; promise: Promise<AgentRuntimeResult> }>;
+type TrackedTask = Readonly<{ caseId: string; promise: Promise<unknown> }>;
+
+export class AgentRuntimeDisposedError extends Error {
+  readonly code = "AGENT_RUNTIME_DISPOSED";
+
+  constructor() {
+    super("Agent runtime is disposed");
+    this.name = "AgentRuntimeDisposedError";
+  }
+}
 
 export class ComposedAgentRuntime implements DesktopAgentRuntime {
   readonly #dependencies: AgentLoopRuntimeDependencies;
@@ -39,7 +48,9 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
   readonly #service: AgentLoopService;
   readonly #tasks = new Set<TrackedTask>();
   readonly #resumed = new Map<string, AgentLoopRunner>();
+  readonly #abort = new AbortController();
   #availability?: Promise<AgentUnavailableReason | undefined>;
+  #disposal?: Promise<void>;
   #disposed = false;
 
   constructor(
@@ -63,21 +74,20 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     };
   }
 
-  async start(input: AgentLoopStartInput): Promise<AgentRuntimeResult> {
-    this.#assertOpen();
-    const unavailable = await this.#initialize();
-    if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
-    return this.#track(input.caseId, async () => ({
-      status: "completed",
-      run: await this.#service.start(input),
-    }));
+  start(input: AgentLoopStartInput): Promise<AgentRuntimeResult> {
+    if (this.#disposed) return Promise.reject(new AgentRuntimeDisposedError());
+    return this.#track(input.caseId, async (signal) => {
+      const unavailable = await this.#initialize(signal);
+      if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
+      return { status: "completed", run: await this.#service.start(input) };
+    });
   }
 
-  async resume(input: AgentResumeInput): Promise<AgentRuntimeResult> {
-    this.#assertOpen();
-    const unavailable = await this.#initialize();
-    if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
-    return this.#track(input.caseId, async () => {
+  resume(input: AgentResumeInput): Promise<AgentRuntimeResult> {
+    if (this.#disposed) return Promise.reject(new AgentRuntimeDisposedError());
+    return this.#track(input.caseId, async (signal) => {
+      const unavailable = await this.#initialize(signal);
+      if (unavailable !== undefined) return { status: "unavailable", reason: unavailable };
       const runner = await this.#dependencies.mutations.run(input.caseId, async () => {
         const snapshot = await this.#runs.load(input.runId);
         if (snapshot.run.caseId !== input.caseId) {
@@ -113,9 +123,15 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     return run;
   }
 
-  async dispose(): Promise<void> {
-    if (this.#disposed) return;
+  dispose(): Promise<void> {
+    if (this.#disposal !== undefined) return this.#disposal;
     this.#disposed = true;
+    this.#abort.abort();
+    this.#disposal = this.#settle();
+    return this.#disposal;
+  }
+
+  async #settle(): Promise<void> {
     const cases = [...new Set([...this.#tasks].map((task) => task.caseId))];
     await Promise.all(
       cases.map((caseId) => this.#dependencies.mutations.run(caseId, async () => {})),
@@ -131,11 +147,13 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     const settlements = await Promise.allSettled([...this.#tasks].map((task) => task.promise));
     const failures = [...cancellations, ...settlements]
       .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-      .map((result) => result.reason);
+      .map((result) => result.reason)
+      .filter((error) => !(error instanceof AgentRuntimeDisposedError));
     if (failures.length > 0) throw new AggregateError(failures, "Agent runtime disposal failed");
   }
 
-  async #initialize(): Promise<AgentUnavailableReason | undefined> {
+  async #initialize(signal: AbortSignal): Promise<AgentUnavailableReason | undefined> {
+    this.#assertAdmitted(signal);
     this.#availability ??= (async () => {
       const [mcp, provider] = await Promise.allSettled([
         this.#external.law.discover(),
@@ -146,17 +164,20 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
       if (typeof provider.value.nextDecision !== "function") return "provider-initialization";
       return undefined;
     })();
-    return this.#availability;
+    const availability = await this.#availability;
+    this.#assertAdmitted(signal);
+    return availability;
   }
 
-  async #track(
+  async #track<Result>(
     caseId: string,
-    operation: () => Promise<AgentRuntimeResult>,
-  ): Promise<AgentRuntimeResult> {
-    const tracked: TrackedTask = { caseId, promise: Promise.resolve().then(operation) };
+    operation: (signal: AbortSignal) => Promise<Result>,
+  ): Promise<Result> {
+    const promise = Promise.resolve().then(() => operation(this.#abort.signal));
+    const tracked: TrackedTask = { caseId, promise };
     this.#tasks.add(tracked);
     try {
-      return await tracked.promise;
+      return await promise;
     } finally {
       this.#tasks.delete(tracked);
     }
@@ -171,7 +192,11 @@ export class ComposedAgentRuntime implements DesktopAgentRuntime {
     });
   }
 
+  #assertAdmitted(signal: AbortSignal): void {
+    if (signal.aborted || this.#disposed) throw new AgentRuntimeDisposedError();
+  }
+
   #assertOpen(): void {
-    if (this.#disposed) throw new Error("Agent runtime is disposed");
+    if (this.#disposed) throw new AgentRuntimeDisposedError();
   }
 }
