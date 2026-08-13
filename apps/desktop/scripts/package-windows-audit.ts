@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { extractAll, listPackage, statFile } from "@electron/asar";
+import { assertReleaseSurface } from "./package-windows-surface.ts";
 
 const fsSafeNativePath = "node_modules/@openclaw/fs-safe/dist/native";
 const fsSafeWindowsTarget = "win32-x64-msvc/fs-safe-native.node";
@@ -15,10 +16,6 @@ const onnxRuntimeRoots = [
   "node_modules/onnxruntime-node/bin/napi-v6",
   "node_modules/kordoc/node_modules/onnxruntime-node/bin/napi-v6",
 ] as const;
-
-const forbiddenMetadata = /(?:\.map|\.d\.[cm]?ts)$/iu;
-const forbiddenKordoc =
-  /(?:^|\/)kordoc\/(?:.*\/)?(?:src|source|docs?|examples?)(?:\/|$)|(?:^|\/)kordoc\/dist\/(?:cli|mcp)\.(?:js|cjs|mjs)$|(?:^|\/)kordoc\/(?:readme(?:\.[^/]*)?|notice|third_party(?:\.[^/]*))$/iu;
 
 export type WindowsPayloadAudit = Readonly<{
   fsSafeNative: readonly string[];
@@ -36,17 +33,6 @@ function filesBelow(root: string): string[] {
   };
   visit(root);
   return paths.sort();
-}
-
-function isForbiddenPath(path: string): boolean {
-  return (
-    forbiddenMetadata.test(path) ||
-    forbiddenKordoc.test(path) ||
-    /(^|\/)(?:\.omo|evidence|secrets?|test|tests|__tests__)(?:\/|$)/iu.test(path) ||
-    /(^|\/)(?:qa(?:[-_.]|$)|[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|\.env(?:\.[^/]+)?)(?:$|\/)/iu.test(
-      path,
-    )
-  );
 }
 
 function isMachO(header: Buffer): boolean {
@@ -125,20 +111,19 @@ export function assertNoRetiredSuggestionCapability(root: string): void {
 }
 
 function assertRuntimeImports(extractedRoot: string): void {
-  const kordocManifest = JSON.parse(
-    readFileSync(join(extractedRoot, "node_modules/kordoc/package.json"), "utf8"),
-  ) as Record<string, unknown>;
-  if (kordocManifest.bin !== undefined || kordocManifest.scripts !== undefined) {
-    throw new Error("Forbidden Kordoc command metadata remains");
-  }
-  const entries = [
-    "node_modules/kordoc/dist/index.js",
-    "node_modules/korean-law-mcp/build/lib/annex-file-parser.js",
-    "node_modules/tesseract.js/src/index.js",
+  const packages = [
+    "@modelcontextprotocol/sdk/client/index.js",
+    "@openclaw/fs-safe",
+    "@tesseract.js-data/eng",
+    "@tesseract.js-data/kor",
+    "kordoc",
+    "tesseract.js",
   ];
-  const script = entries
-    .map((entry) => `await import(${JSON.stringify(`file://${resolve(extractedRoot, entry)}`)});`)
-    .join("\n");
+  const direct = "node_modules/korean-law-mcp/build/lib/annex-file-parser.js";
+  const script = [
+    ...packages.map((entry) => `await import(${JSON.stringify(entry)});`),
+    `await import(${JSON.stringify(`file://${resolve(extractedRoot, direct)}`)});`,
+  ].join("\n");
   const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
     cwd: extractedRoot,
     encoding: "utf8",
@@ -157,11 +142,11 @@ export function assertAsarIntegrity(asarPath: string): readonly string[] {
       throw new Error(`stale unpacked ASAR reference: ${normalized}`);
     }
   }
-  const forbidden = paths.map(normalizedAsarPath).filter(isForbiddenPath);
-  if (forbidden.length > 0) throw new Error(`Forbidden ASAR metadata: ${forbidden.join(", ")}`);
+  const normalizedPaths = paths.map(normalizedAsarPath);
   const extractedRoot = mkdtempSync(join(tmpdir(), "haksul-asar-extract-"));
   try {
     extractAll(asarPath, extractedRoot);
+    assertReleaseSurface(extractedRoot, normalizedPaths);
     assertNoRetiredSuggestionCapability(extractedRoot);
     assertRuntimeImports(extractedRoot);
   } finally {
@@ -177,9 +162,8 @@ export function auditWindowsPackage(
   const unpackedDependencies = join(unpackedRoot, "resources", "app.asar.unpacked");
   const payloadPaths = filesBelow(unpackedRoot);
   assertNoRetiredSuggestionCapability(unpackedRoot);
-  const forbidden = [...asarPaths, ...payloadPaths].filter(isForbiddenPath).sort();
-  if (forbidden.length > 0)
-    throw new Error(`Forbidden Windows package payload: ${forbidden.join(", ")}`);
+  assertReleaseSurface(unpackedRoot, payloadPaths);
+  assertReleaseSurface(unpackedRoot, asarPaths);
   for (const runtimeFile of fsSafeRuntimeFiles) {
     const path = join(unpackedDependencies, runtimeFile);
     if (!existsSync(path)) throw new Error(`Missing fs-safe runtime closure: ${path}`);

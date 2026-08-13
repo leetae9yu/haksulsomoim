@@ -53,6 +53,20 @@ describe("Windows release packaging", () => {
     }
   });
 
+  test("prunes dependency-specific runtime closures before ASAR indexing and audits both views", () => {
+    const source = readFileSync(join(desktopRoot, "scripts/package-windows.ts"), "utf8");
+    const prune = source.indexOf("pruneDependencyMetadata(stagedDependencies)");
+    const builder = source.indexOf(
+      'const builderCli = resolve(desktopRoot, "node_modules/electron-builder/cli.js")',
+    );
+    const asarAudit = source.indexOf("assertAsarIntegrity(asarPath)");
+    const physicalAudit = source.indexOf("auditWindowsPackage(unpackedRoot, asarPaths)");
+    expect(prune).toBeGreaterThan(0);
+    expect(builder).toBeGreaterThan(prune);
+    expect(asarAudit).toBeGreaterThan(builder);
+    expect(physicalAudit).toBeGreaterThan(asarAudit);
+  });
+
   test("excludes dependency test payload without removing runtime source", () => {
     expect(isDependencyTestPath("zod/src/v3/tests/index.test.ts")).toBe(true);
     expect(isDependencyTestPath("sdk/__tests__/client.spec.js")).toBe(true);

@@ -86,9 +86,9 @@ describe("Windows package payload audit", () => {
 
   test("removes non-runtime dependency metadata before archive creation", () => {
     withTemporaryRoot((root) => {
-      write(join(root, "node_modules/package/runtime.js"), "export {};");
-      write(join(root, "node_modules/package/example.d.ts"), "010-1234-5678");
-      write(join(root, "node_modules/package/runtime.js.map"), "source map");
+      write(join(root, "node_modules/zod/runtime.js"), "export {};");
+      write(join(root, "node_modules/zod/example.d.ts"), "010-1234-5678");
+      write(join(root, "node_modules/zod/runtime.js.map"), "source map");
       write(join(root, "node_modules/kordoc/dist/index.js"), "export {};");
       write(join(root, "node_modules/kordoc/dist/cli.js"), "010-1234-5678");
       write(join(root, "node_modules/kordoc/dist/mcp.js"), "010-1234-5678");
@@ -109,9 +109,9 @@ describe("Windows package payload audit", () => {
 
       pruneDependencyMetadata(root);
 
-      expect(existsSync(join(root, "node_modules/package/runtime.js"))).toBe(true);
-      expect(existsSync(join(root, "node_modules/package/example.d.ts"))).toBe(false);
-      expect(existsSync(join(root, "node_modules/package/runtime.js.map"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/zod/runtime.js"))).toBe(true);
+      expect(existsSync(join(root, "node_modules/zod/example.d.ts"))).toBe(false);
+      expect(existsSync(join(root, "node_modules/zod/runtime.js.map"))).toBe(false);
       expect(existsSync(join(root, "node_modules/kordoc/dist/index.js"))).toBe(true);
       expect(existsSync(join(root, "node_modules/kordoc/dist/cli.js"))).toBe(false);
       expect(existsSync(join(root, "node_modules/kordoc/dist/mcp.js"))).toBe(false);
@@ -181,7 +181,7 @@ describe("Windows package payload audit", () => {
         ],
       });
       expect(() => auditWindowsPackage(unpackedRoot, ["out/.env"])).toThrow(
-        "Forbidden Windows package payload",
+        "Forbidden release paths",
       );
     });
   });
