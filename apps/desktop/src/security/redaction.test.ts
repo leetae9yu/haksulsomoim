@@ -94,6 +94,15 @@ describe("Redactor", () => {
     expect(otherCase).not.toBe(first);
   });
 
+  test("preserves valid calendar dates while masking account numbers", () => {
+    const redacted = new Redactor(tokenKey).redact(
+      "case-alpha",
+      "소장 송달: 2023-06-09 / 계좌: 123-456-789012",
+    );
+    expect(redacted).toContain("2023-06-09");
+    expect(redacted).not.toContain("123-456-789012");
+  });
+
   test("diagnostics are constructed only from branded redacted fields", () => {
     const redactor = new Redactor(tokenKey);
     const message: RedactedText = redactor.redact("case-alpha", outbound);

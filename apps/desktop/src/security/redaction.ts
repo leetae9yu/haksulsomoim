@@ -18,6 +18,17 @@ export interface StructuredSensitiveFields {
   readonly personName?: readonly string[];
 }
 
+export interface RedactionMapping {
+  readonly kind: IdentifierKind;
+  readonly token: string;
+  readonly value: string;
+}
+
+export interface RedactionResult {
+  readonly text: RedactedText;
+  readonly mappings: readonly RedactionMapping[];
+}
+
 interface IdentifierPattern {
   readonly kind: IdentifierKind;
   readonly pattern: RegExp;
@@ -47,7 +58,8 @@ const IDENTIFIER_PATTERNS: readonly IdentifierPattern[] = [
   },
   {
     kind: "ACCOUNT",
-    pattern: /(?<!\d)\d{2,6}(?:-\d{2,6}){2,4}(?!\d)/g,
+    pattern:
+      /(?<!\d)(?!(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d))\d{2,6}(?:-\d{2,6}){2,4}(?!\d)/g,
   },
 ];
 
@@ -107,26 +119,43 @@ export class Redactor {
   }
 
   redactStructured(caseId: string, input: string, fields: StructuredSensitiveFields): RedactedText {
+    return this.redactWithMappings(caseId, input, fields).text;
+  }
+
+  redactWithMappings(
+    caseId: string,
+    input: string,
+    fields: StructuredSensitiveFields = {},
+  ): RedactionResult {
     if (caseId.length === 0) {
       throw new TypeError("A non-empty case id is required for redaction");
     }
 
     let output = input;
+    const mappings = new Map<string, RedactionMapping>();
+    const replace = (kind: IdentifierKind, value: string): string => {
+      const token = this.#token(caseId, kind, value);
+      mappings.set(token, { kind, token, value });
+      return token;
+    };
     const structuredValues = [
       ...this.#structuredValues("EMAIL", fields.email),
       ...this.#structuredValues("PERSON", fields.personName),
     ] as const;
     for (const { kind, value } of structuredValues) {
-      output = output.replaceAll(value, this.#token(caseId, kind, value));
+      output = output.replaceAll(value, replace(kind, value));
     }
     output = output.replace(
       CONTEXTUAL_PERSON,
-      (_match, label: string, person: string) => `${label}${this.#token(caseId, "PERSON", person)}`,
+      (_match, label: string, person: string) => `${label}${replace("PERSON", person)}`,
     );
     for (const { kind, pattern } of IDENTIFIER_PATTERNS) {
-      output = output.replace(pattern, (identifier) => this.#token(caseId, kind, identifier));
+      output = output.replace(pattern, (identifier) => replace(kind, identifier));
     }
-    return output as RedactedText;
+    return Object.freeze({
+      text: output as RedactedText,
+      mappings: Object.freeze([...mappings.values()]),
+    });
   }
 
   #structuredValues(
