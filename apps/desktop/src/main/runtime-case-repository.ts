@@ -16,6 +16,8 @@ const citationSchema = z.strictObject({
   versionDate: z.string().min(1).max(100),
   retrievedAt: z.string().datetime(),
   toolName: z.enum([
+    "legal_research",
+    "legal_analysis",
     "search_law",
     "get_law_text",
     "get_annexes",

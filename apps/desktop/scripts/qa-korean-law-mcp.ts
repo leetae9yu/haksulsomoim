@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createKoreanLawMcpAdapter } from "../src/integrations/korean-law-mcp/korean-law-mcp";
+import { routeLegalQuery } from "../src/main/legal-guidance";
 import { sanitizeSecret } from "../src/security/redaction";
 
 function evidenceDirectory(arguments_: readonly string[]): string {
@@ -18,13 +19,22 @@ const adapter = createKoreanLawMcpAdapter();
 const discoveredTools = await adapter.discover();
 const discoveryAuthenticated =
   credentialPresent &&
-  discoveredTools.length === 5 &&
+  discoveredTools.length === 7 &&
+  discoveredTools.includes("legal_research") &&
+  discoveredTools.includes("legal_analysis") &&
   discoveredTools.includes("search_law") &&
   discoveredTools.includes("get_law_text");
 const result = await adapter.execute("search_law", { query: "민사소송법" });
 const detailResult = result.ok
   ? await adapter.execute("get_law_text", { mst: "252393" })
   : undefined;
+const procedureRoute = routeLegalQuery("소액사건 지급명령 절차와 수수료");
+const procedureResult = await adapter.execute(procedureRoute.tool, procedureRoute.arguments);
+const verificationRoute = routeLegalQuery("민법 제750조 인용 검증");
+const verificationResult = await adapter.execute(
+  verificationRoute.tool,
+  verificationRoute.arguments,
+);
 await adapter.close();
 
 const missingCredentialAdapter = createKoreanLawMcpAdapter({ lawOc: "" });
@@ -41,7 +51,9 @@ const citationCount = citations.length;
 const externalFailure = result.ok ? undefined : result.error;
 const credentialFallbackReady =
   !missingCredentialResult.ok && missingCredentialResult.error.code === "needs_credentials";
-const authenticated = discoveryAuthenticated && result.ok && citationCount > 0;
+const directRoutingAuthenticated = procedureResult.ok && verificationResult.ok;
+const authenticated =
+  discoveryAuthenticated && result.ok && citationCount > 0 && directRoutingAuthenticated;
 const unavailable =
   (!credentialPresent && externalFailure?.code === "needs_credentials") ||
   (credentialPresent && externalFailure?.code === "execution_failed");
@@ -57,6 +69,11 @@ const evidence = Object.freeze({
   discovery: {
     authenticated: discoveryAuthenticated,
     tools: discoveredTools,
+  },
+  directRouting: {
+    authenticated: directRoutingAuthenticated,
+    procedureTool: procedureRoute.tool,
+    verificationTool: verificationRoute.tool,
   },
   tool: "search_law",
   citationCount,

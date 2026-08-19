@@ -14,6 +14,8 @@ import type { AgentToolExecutionContext } from "../../main/agent/agent-tool-exec
 import { parseKoreanLawCitations } from "./citation-parser";
 
 export const ALLOWED_KOREAN_LAW_TOOLS = [
+  "legal_research",
+  "legal_analysis",
   "search_law",
   "get_law_text",
   "get_annexes",

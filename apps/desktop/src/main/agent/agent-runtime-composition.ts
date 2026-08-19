@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { CodexAgentDecisionProvider } from "../../integrations/agent-provider/agent-provider";
 import type { KoreanLawMcpAdapter } from "../../integrations/korean-law-mcp/korean-law-mcp";
 import type { Redactor } from "../../security/redaction";
+import { routeLegalQuery } from "../legal-guidance";
 import type { RuntimeCaseMutationQueue } from "../runtime-case-mutation-queue";
 import type { RuntimeCaseRepository } from "../runtime-case-types";
 import type { AgentLoopRuntimeDependencies } from "./agent-loop-runtime";
@@ -102,7 +103,8 @@ export function createAgentLoopDependencies(
   const tools = new AgentToolRegistry({
     law: {
       async search(query, context) {
-        return lawResult(await input.external.law.execute("search_law", { query }, context));
+        const route = routeLegalQuery(query);
+        return lawResult(await input.external.law.execute(route.tool, route.arguments, context));
       },
       async detail(citationId, context) {
         return lawResult(

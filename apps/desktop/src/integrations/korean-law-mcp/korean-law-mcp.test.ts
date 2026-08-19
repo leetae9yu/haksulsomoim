@@ -129,8 +129,10 @@ describe("Korean law MCP adapter", () => {
     }
   });
 
-  test("exposes exactly the five approved tools and rejects arbitrary discovery or execution", async () => {
+  test("exposes the approved direct-routing tools and rejects arbitrary discovery or execution", async () => {
     expect(ALLOWED_KOREAN_LAW_TOOLS).toEqual([
+      "legal_research",
+      "legal_analysis",
       "search_law",
       "get_law_text",
       "get_annexes",

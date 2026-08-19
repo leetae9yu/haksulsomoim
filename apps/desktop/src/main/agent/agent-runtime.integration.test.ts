@@ -57,6 +57,64 @@ async function caseFixture(runtime: Awaited<ReturnType<typeof createDesktopRunti
 }
 
 describe("desktop Agent runtime integration", () => {
+  test("routes a small-claims procedure request through korean-law legal research", async () => {
+    const root = await mkdtemp(join(tmpdir(), "haksul-agent-law-route-"));
+    roots.push(root);
+    const calls: Array<{ tool: string; arguments: Record<string, unknown> }> = [];
+    const runtime = await createDesktopRuntime(root, {
+      loadKey: async () => new Uint8Array(32).fill(29),
+      createLaw: () =>
+        law({
+          execute: async (tool, arguments_) => {
+            calls.push({ tool, arguments: arguments_ });
+            return { ok: true, value: { content: { source: "official-law" }, citations: [] } };
+          },
+        }),
+      createProvider: async () =>
+        provider(async (input) =>
+          input.observations.length === 0
+            ? {
+                kind: "tool",
+                decisionId: "provider-route-decision",
+                toolCall: {
+                  toolName: "search-official-law",
+                  toolCallId: "provider-route-tool",
+                  query: "소액사건 지급명령 절차와 수수료",
+                },
+              }
+            : {
+                kind: "finish",
+                decisionId: "provider-route-finish",
+                outcome: { kind: "completed", summary: "Official procedure researched" },
+              },
+        ),
+    });
+    const caseId = await caseFixture(runtime);
+    const opened = await runtime.agent.openCase(caseId);
+
+    const result = await runtime.agent.start({
+      caseId,
+      goal: agentGoalSchema.parse({
+        kind: "civil-recovery",
+        caseId,
+        objective: "prepare-civil-demand",
+      }),
+      approvedContextDigest: opened.contextDigest,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(calls).toEqual([
+      {
+        tool: "legal_research",
+        arguments: {
+          task: "procedure_detail",
+          query: "소액사건 지급명령 절차와 수수료",
+        },
+      },
+    ]);
+    await runtime.dispose();
+  });
+
   test("resumes an interrupted run after recreating the desktop runtime", async () => {
     const root = await mkdtemp(join(tmpdir(), "haksul-agent-runtime-"));
     roots.push(root);
