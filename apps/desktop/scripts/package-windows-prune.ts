@@ -68,6 +68,12 @@ const packageRemovals: Readonly<Record<string, readonly string[]>> = {
     "server/sse.js",
   ],
   pako: ["lib/zlib/README"],
+  "playwright-core": [
+    "cli.js",
+    "lib/entry/mcp.js",
+    "lib/tools/cli-client/cli.js",
+    "lib/tools/skills",
+  ],
   "readable-stream": ["doc"],
   "tesseract.js": ["docs", "examples", "scripts"],
   "wasm-feature-detect": ["README.md.ejs"],
