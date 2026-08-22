@@ -19,6 +19,7 @@
     "qa:mcp": "bun run scripts/qa-mcp.ts",
     "qa:installed": "bun run scripts/qa-installed-mcp.ts",
     "qa:law": "bun run scripts/qa-law.ts",
+    "qa:court": "bun run scripts/qa-court-portal.ts",
     "qa:secure-computer": "bun run scripts/qa-secure-computer.ts"
   },
   "dependencies": {

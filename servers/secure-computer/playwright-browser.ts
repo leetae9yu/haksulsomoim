@@ -28,6 +28,42 @@ interface PlaywrightSecureBrowserOptions {
 const candidateKey = (candidate: ScreenTextRegion): string =>
   `${candidate.text}\0${candidate.boundingBox.x}:${candidate.boundingBox.y}:${candidate.boundingBox.width}:${candidate.boundingBox.height}`;
 
+const waitForRenderedBody = async (page: Page): Promise<void> => {
+  await page.evaluate(
+    (timeoutMs) =>
+      new Promise<void>((resolve, reject) => {
+        const hasRenderedContent = (): boolean => {
+          const body = document.body;
+          if (body === null) return false;
+          if (body.innerText.trim().length > 0) return true;
+          return (
+            body.querySelector("a, button, canvas, iframe, input, select, svg, textarea") !== null
+          );
+        };
+        if (hasRenderedContent()) {
+          resolve();
+          return;
+        }
+        const observer = new MutationObserver(() => {
+          if (!hasRenderedContent()) return;
+          observer.disconnect();
+          clearTimeout(timeout);
+          resolve();
+        });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+        const timeout = setTimeout(() => {
+          observer.disconnect();
+          reject(new Error(`Page did not render observable content within ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    30_000,
+  );
+};
+
 export class PlaywrightSecureBrowser implements SecureBrowserPort {
   readonly #ocr: LocalOcrPort;
   readonly #allowedHosts: ReadonlySet<string>;
@@ -69,6 +105,7 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
     });
     this.#page = await this.#context.newPage();
     await this.#page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await waitForRenderedBody(this.#page);
   }
 
   async inspect(): Promise<SecureBrowserInspection> {

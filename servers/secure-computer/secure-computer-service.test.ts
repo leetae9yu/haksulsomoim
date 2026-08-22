@@ -6,11 +6,20 @@ import type {
   SecureBrowserTarget,
 } from "../contracts/secure-computer";
 import { Redactor } from "./redaction";
-import { SecureComputerService } from "./secure-computer-service";
+import { MAX_MASKED_IMAGE_BYTES, SecureComputerService } from "./secure-computer-service";
+
+const deferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+};
 
 class FakeBrowser implements SecureBrowserPort {
   readonly typed: string[] = [];
   masks: readonly ScreenMaskRegion[] = [];
+  image = new TextEncoder().encode("masked-png");
   target: SecureBrowserTarget = { text: "연락처", tagName: "INPUT", inputType: "text" };
   startedUrl = "";
 
@@ -34,7 +43,7 @@ class FakeBrowser implements SecureBrowserPort {
 
   async captureMasked(regions: readonly ScreenMaskRegion[]): Promise<Uint8Array> {
     this.masks = regions;
-    return new TextEncoder().encode("masked-png");
+    return this.image;
   }
 
   async targetAt(): Promise<SecureBrowserTarget> {
@@ -81,6 +90,89 @@ describe("SecureComputerService", () => {
         observationDigest: observation.observationDigest,
       }),
     ).toEqual({ outcome: "rejected", reason: "stale-observation", actionCount: 1 });
+    await service.close();
+  });
+
+  test("serializes concurrent actions against one observation", async () => {
+    const clickStarted = deferred<void>();
+    const releaseClick = deferred<void>();
+    class BlockingBrowser extends FakeBrowser {
+      clickCount = 0;
+
+      override async click(): Promise<void> {
+        this.clickCount += 1;
+        clickStarted.resolve();
+        await releaseClick.promise;
+      }
+    }
+    const browser = new BlockingBrowser();
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-b",
+      redactor: new Redactor(new Uint8Array(32).fill(4)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+    const observation = await service.observe();
+    const action = {
+      kind: "click" as const,
+      x: 10,
+      y: 10,
+      observationDigest: observation.observationDigest,
+    };
+
+    const first = service.act(action);
+    await clickStarted.promise;
+    const second = service.act(action);
+    releaseClick.resolve();
+
+    expect(await Promise.all([first, second])).toEqual([
+      { outcome: "executed", actionCount: 1 },
+      { outcome: "rejected", reason: "stale-observation", actionCount: 1 },
+    ]);
+    expect(browser.clickCount).toBe(1);
+    await service.close();
+  });
+
+  test("rejects masked screenshots that exceed the transport budget", async () => {
+    const browser = new FakeBrowser();
+    browser.image = new Uint8Array(MAX_MASKED_IMAGE_BYTES + 1);
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-c",
+      redactor: new Redactor(new Uint8Array(32).fill(5)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+
+    await expect(service.observe()).rejects.toThrow("Masked screenshot exceeds the byte limit");
+    await service.close();
+  });
+
+  test("invalidates the previous observation when a new capture fails", async () => {
+    const browser = new FakeBrowser();
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-d",
+      redactor: new Redactor(new Uint8Array(32).fill(6)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+    const previous = await service.observe();
+    browser.image = new Uint8Array(MAX_MASKED_IMAGE_BYTES + 1);
+
+    await expect(service.observe()).rejects.toThrow("Masked screenshot exceeds the byte limit");
+    expect(
+      await service.act({
+        kind: "click",
+        x: 10,
+        y: 10,
+        observationDigest: previous.observationDigest,
+      }),
+    ).toEqual({ outcome: "rejected", reason: "stale-observation", actionCount: 0 });
     await service.close();
   });
 });

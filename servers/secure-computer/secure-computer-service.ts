@@ -12,6 +12,8 @@ import { SecureComputerActionGate } from "./action-gate";
 import type { Redactor } from "./redaction";
 import { SecureComputerRedactionSession } from "./redaction-session";
 
+export const MAX_MASKED_IMAGE_BYTES = 3_000_000;
+
 interface SecureComputerServiceOptions {
   readonly browser: SecureBrowserPort;
   readonly caseId: string;
@@ -65,6 +67,7 @@ export class SecureComputerService {
   readonly #maxActions: number;
   #actionCount = 0;
   #latestObservation: SecureComputerObservation | undefined;
+  #operationQueue: Promise<void> = Promise.resolve();
   #started = false;
 
   constructor(options: SecureComputerServiceOptions) {
@@ -77,88 +80,102 @@ export class SecureComputerService {
     this.#maxActions = options.maxActions;
   }
 
-  async start(url: string): Promise<void> {
-    const probe = this.#gate.evaluate({
-      url,
-      action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) },
+  start(url: string): Promise<void> {
+    return this.#enqueue(async () => {
+      const probe = this.#gate.evaluate({
+        url,
+        action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) },
+      });
+      if (probe.outcome !== "allowed") throw new Error(probe.reason);
+      await this.#browser.start(url);
+      this.#started = true;
     });
-    if (probe.outcome !== "allowed") throw new Error(probe.reason);
-    await this.#browser.start(url);
-    this.#started = true;
   }
 
-  async observe(): Promise<SecureComputerObservation> {
-    this.#assertStarted();
-    const inspection = await this.#browser.inspect();
-    const origin = this.#gate.evaluate({
-      url: inspection.url,
-      action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) },
+  observe(): Promise<SecureComputerObservation> {
+    return this.#enqueue(async () => {
+      this.#assertStarted();
+      this.#latestObservation = undefined;
+      const inspection = await this.#browser.inspect();
+      const origin = this.#gate.evaluate({
+        url: inspection.url,
+        action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) },
+      });
+      if (origin.outcome !== "allowed") throw new Error(origin.reason);
+      const analyzed = inspection.candidates.map((candidate) => ({
+        candidate,
+        redacted: this.#redaction.redact(candidate.text),
+      }));
+      const regions = collapseMaskRegions(
+        analyzed
+          .filter(({ candidate, redacted }) => redacted.text !== candidate.text)
+          .map(({ candidate, redacted }) => ({
+            label: redacted.text,
+            boundingBox: candidate.boundingBox,
+          })),
+      );
+      const maskedText = analyzed.map(({ candidate, redacted }) =>
+        redacted.text !== candidate.text
+          ? redacted.text
+          : (regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ??
+            redacted.text),
+      );
+      const imagePng = await this.#browser.captureMasked(regions);
+      if (imagePng.byteLength > MAX_MASKED_IMAGE_BYTES) {
+        throw new RangeError(
+          `Masked screenshot exceeds the byte limit of ${MAX_MASKED_IMAGE_BYTES}`,
+        );
+      }
+      const text = [...new Set(maskedText)].join("\n").slice(0, 20_000);
+      const observation = Object.freeze({
+        url: inspection.url,
+        width: inspection.width,
+        height: inspection.height,
+        imagePng: imagePng.slice(),
+        maskedText: text,
+        observationDigest: createHash("sha256")
+          .update(inspection.url, "utf8")
+          .update("\0")
+          .update(imagePng)
+          .update("\0")
+          .update(text, "utf8")
+          .digest("hex"),
+      });
+      this.#latestObservation = observation;
+      return observation;
     });
-    if (origin.outcome !== "allowed") throw new Error(origin.reason);
-    const analyzed = inspection.candidates.map((candidate) => ({
-      candidate,
-      redacted: this.#redaction.redact(candidate.text),
-    }));
-    const regions = collapseMaskRegions(
-      analyzed
-        .filter(({ candidate, redacted }) => redacted.text !== candidate.text)
-        .map(({ candidate, redacted }) => ({
-          label: redacted.text,
-          boundingBox: candidate.boundingBox,
-        })),
-    );
-    const maskedText = analyzed.map(({ candidate, redacted }) =>
-      redacted.text !== candidate.text
-        ? redacted.text
-        : (regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ??
-          redacted.text),
-    );
-    const imagePng = await this.#browser.captureMasked(regions);
-    const text = [...new Set(maskedText)].join("\n").slice(0, 20_000);
-    const observation = Object.freeze({
-      url: inspection.url,
-      width: inspection.width,
-      height: inspection.height,
-      imagePng: imagePng.slice(),
-      maskedText: text,
-      observationDigest: createHash("sha256")
-        .update(inspection.url, "utf8")
-        .update("\0")
-        .update(imagePng)
-        .update("\0")
-        .update(text, "utf8")
-        .digest("hex"),
-    });
-    this.#latestObservation = observation;
-    return observation;
   }
 
-  async act(input: SecureComputerAction): Promise<SecureComputerActionResult> {
-    this.#assertStarted();
-    const action = secureComputerActionSchema.parse(input);
-    if (this.#latestObservation?.observationDigest !== action.observationDigest)
-      return rejected("stale-observation", this.#actionCount);
-    if (this.#actionCount >= this.#maxActions)
-      return rejected("action-budget-exhausted", this.#actionCount);
-    const target =
-      action.kind === "scroll" ? undefined : await this.#browser.targetAt(action.x, action.y);
-    const decision = this.#gate.evaluate(
-      target === undefined
-        ? { url: this.#latestObservation.url, action }
-        : { url: this.#latestObservation.url, action, target },
-    );
-    if (decision.outcome !== "allowed") return { ...decision, actionCount: this.#actionCount };
-    await this.#execute(action);
-    this.#actionCount += 1;
-    this.#latestObservation = undefined;
-    return { outcome: "executed", actionCount: this.#actionCount };
+  act(input: SecureComputerAction): Promise<SecureComputerActionResult> {
+    return this.#enqueue(async () => {
+      this.#assertStarted();
+      const action = secureComputerActionSchema.parse(input);
+      if (this.#latestObservation?.observationDigest !== action.observationDigest)
+        return rejected("stale-observation", this.#actionCount);
+      if (this.#actionCount >= this.#maxActions)
+        return rejected("action-budget-exhausted", this.#actionCount);
+      const target =
+        action.kind === "scroll" ? undefined : await this.#browser.targetAt(action.x, action.y);
+      const decision = this.#gate.evaluate(
+        target === undefined
+          ? { url: this.#latestObservation.url, action }
+          : { url: this.#latestObservation.url, action, target },
+      );
+      if (decision.outcome !== "allowed") return { ...decision, actionCount: this.#actionCount };
+      await this.#execute(action);
+      this.#actionCount += 1;
+      this.#latestObservation = undefined;
+      return { outcome: "executed", actionCount: this.#actionCount };
+    });
   }
 
-  async close(): Promise<void> {
-    this.#latestObservation = undefined;
-    this.#started = false;
-    this.#redaction.dispose();
-    await this.#browser.close();
+  close(): Promise<void> {
+    return this.#enqueue(async () => {
+      this.#latestObservation = undefined;
+      this.#started = false;
+      this.#redaction.dispose();
+      await this.#browser.close();
+    });
   }
 
   async #execute(action: SecureComputerAction): Promise<void> {
@@ -172,6 +189,15 @@ export class SecureComputerService {
       case "scroll":
         return this.#browser.scroll(action.deltaX, action.deltaY);
     }
+  }
+
+  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#operationQueue.then(operation, operation);
+    this.#operationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   #assertStarted(): void {

@@ -596,6 +596,38 @@ import {
   chromium
 } from "playwright-core";
 var candidateKey = (candidate) => `${candidate.text}\x00${candidate.boundingBox.x}:${candidate.boundingBox.y}:${candidate.boundingBox.width}:${candidate.boundingBox.height}`;
+var waitForRenderedBody = async (page) => {
+  await page.evaluate((timeoutMs) => new Promise((resolve2, reject) => {
+    const hasRenderedContent = () => {
+      const body = document.body;
+      if (body === null)
+        return false;
+      if (body.innerText.trim().length > 0)
+        return true;
+      return body.querySelector("a, button, canvas, iframe, input, select, svg, textarea") !== null;
+    };
+    if (hasRenderedContent()) {
+      resolve2();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (!hasRenderedContent())
+        return;
+      observer.disconnect();
+      clearTimeout(timeout);
+      resolve2();
+    });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+    const timeout = setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`Page did not render observable content within ${timeoutMs}ms`));
+    }, timeoutMs);
+  }), 30000);
+};
 
 class PlaywrightSecureBrowser {
   #ocr;
@@ -634,6 +666,7 @@ class PlaywrightSecureBrowser {
     });
     this.#page = await this.#context.newPage();
     await this.#page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await waitForRenderedBody(this.#page);
   }
   async inspect() {
     const page = this.#requirePage();
@@ -956,6 +989,7 @@ class SecureComputerRedactionSession {
 }
 
 // servers/secure-computer/secure-computer-service.ts
+var MAX_MASKED_IMAGE_BYTES = 3000000;
 var rejected = (reason, actionCount) => ({
   outcome: "rejected",
   reason,
@@ -980,6 +1014,7 @@ class SecureComputerService {
   #maxActions;
   #actionCount = 0;
   #latestObservation;
+  #operationQueue = Promise.resolve();
   #started = false;
   constructor(options) {
     if (!Number.isSafeInteger(options.maxActions) || options.maxActions < 1) {
@@ -990,69 +1025,81 @@ class SecureComputerService {
     this.#gate = new SecureComputerActionGate(options.allowedHosts);
     this.#maxActions = options.maxActions;
   }
-  async start(url) {
-    const probe = this.#gate.evaluate({
-      url,
-      action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) }
+  start(url) {
+    return this.#enqueue(async () => {
+      const probe = this.#gate.evaluate({
+        url,
+        action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) }
+      });
+      if (probe.outcome !== "allowed")
+        throw new Error(probe.reason);
+      await this.#browser.start(url);
+      this.#started = true;
     });
-    if (probe.outcome !== "allowed")
-      throw new Error(probe.reason);
-    await this.#browser.start(url);
-    this.#started = true;
   }
-  async observe() {
-    this.#assertStarted();
-    const inspection = await this.#browser.inspect();
-    const origin = this.#gate.evaluate({
-      url: inspection.url,
-      action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) }
-    });
-    if (origin.outcome !== "allowed")
-      throw new Error(origin.reason);
-    const analyzed = inspection.candidates.map((candidate) => ({
-      candidate,
-      redacted: this.#redaction.redact(candidate.text)
-    }));
-    const regions = collapseMaskRegions(analyzed.filter(({ candidate, redacted }) => redacted.text !== candidate.text).map(({ candidate, redacted }) => ({
-      label: redacted.text,
-      boundingBox: candidate.boundingBox
-    })));
-    const maskedText = analyzed.map(({ candidate, redacted }) => redacted.text !== candidate.text ? redacted.text : regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ?? redacted.text);
-    const imagePng = await this.#browser.captureMasked(regions);
-    const text = [...new Set(maskedText)].join(`
+  observe() {
+    return this.#enqueue(async () => {
+      this.#assertStarted();
+      this.#latestObservation = undefined;
+      const inspection = await this.#browser.inspect();
+      const origin = this.#gate.evaluate({
+        url: inspection.url,
+        action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) }
+      });
+      if (origin.outcome !== "allowed")
+        throw new Error(origin.reason);
+      const analyzed = inspection.candidates.map((candidate) => ({
+        candidate,
+        redacted: this.#redaction.redact(candidate.text)
+      }));
+      const regions = collapseMaskRegions(analyzed.filter(({ candidate, redacted }) => redacted.text !== candidate.text).map(({ candidate, redacted }) => ({
+        label: redacted.text,
+        boundingBox: candidate.boundingBox
+      })));
+      const maskedText = analyzed.map(({ candidate, redacted }) => redacted.text !== candidate.text ? redacted.text : regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ?? redacted.text);
+      const imagePng = await this.#browser.captureMasked(regions);
+      if (imagePng.byteLength > MAX_MASKED_IMAGE_BYTES) {
+        throw new RangeError(`Masked screenshot exceeds the byte limit of ${MAX_MASKED_IMAGE_BYTES}`);
+      }
+      const text = [...new Set(maskedText)].join(`
 `).slice(0, 20000);
-    const observation = Object.freeze({
-      url: inspection.url,
-      width: inspection.width,
-      height: inspection.height,
-      imagePng: imagePng.slice(),
-      maskedText: text,
-      observationDigest: createHash2("sha256").update(inspection.url, "utf8").update("\x00").update(imagePng).update("\x00").update(text, "utf8").digest("hex")
+      const observation = Object.freeze({
+        url: inspection.url,
+        width: inspection.width,
+        height: inspection.height,
+        imagePng: imagePng.slice(),
+        maskedText: text,
+        observationDigest: createHash2("sha256").update(inspection.url, "utf8").update("\x00").update(imagePng).update("\x00").update(text, "utf8").digest("hex")
+      });
+      this.#latestObservation = observation;
+      return observation;
     });
-    this.#latestObservation = observation;
-    return observation;
   }
-  async act(input) {
-    this.#assertStarted();
-    const action = secureComputerActionSchema.parse(input);
-    if (this.#latestObservation?.observationDigest !== action.observationDigest)
-      return rejected("stale-observation", this.#actionCount);
-    if (this.#actionCount >= this.#maxActions)
-      return rejected("action-budget-exhausted", this.#actionCount);
-    const target = action.kind === "scroll" ? undefined : await this.#browser.targetAt(action.x, action.y);
-    const decision = this.#gate.evaluate(target === undefined ? { url: this.#latestObservation.url, action } : { url: this.#latestObservation.url, action, target });
-    if (decision.outcome !== "allowed")
-      return { ...decision, actionCount: this.#actionCount };
-    await this.#execute(action);
-    this.#actionCount += 1;
-    this.#latestObservation = undefined;
-    return { outcome: "executed", actionCount: this.#actionCount };
+  act(input) {
+    return this.#enqueue(async () => {
+      this.#assertStarted();
+      const action = secureComputerActionSchema.parse(input);
+      if (this.#latestObservation?.observationDigest !== action.observationDigest)
+        return rejected("stale-observation", this.#actionCount);
+      if (this.#actionCount >= this.#maxActions)
+        return rejected("action-budget-exhausted", this.#actionCount);
+      const target = action.kind === "scroll" ? undefined : await this.#browser.targetAt(action.x, action.y);
+      const decision = this.#gate.evaluate(target === undefined ? { url: this.#latestObservation.url, action } : { url: this.#latestObservation.url, action, target });
+      if (decision.outcome !== "allowed")
+        return { ...decision, actionCount: this.#actionCount };
+      await this.#execute(action);
+      this.#actionCount += 1;
+      this.#latestObservation = undefined;
+      return { outcome: "executed", actionCount: this.#actionCount };
+    });
   }
-  async close() {
-    this.#latestObservation = undefined;
-    this.#started = false;
-    this.#redaction.dispose();
-    await this.#browser.close();
+  close() {
+    return this.#enqueue(async () => {
+      this.#latestObservation = undefined;
+      this.#started = false;
+      this.#redaction.dispose();
+      await this.#browser.close();
+    });
   }
   async#execute(action) {
     switch (action.kind) {
@@ -1065,6 +1112,15 @@ class SecureComputerService {
       case "scroll":
         return this.#browser.scroll(action.deltaX, action.deltaY);
     }
+  }
+  #enqueue(operation) {
+    const result2 = this.#operationQueue.then(operation, operation);
+    this.#operationQueue = result2.then(() => {
+      return;
+    }, () => {
+      return;
+    });
+    return result2;
   }
   #assertStarted() {
     if (!this.#started)
