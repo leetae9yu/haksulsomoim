@@ -197,7 +197,7 @@ describe("SecureComputerService", () => {
     const observation = await service.observe();
 
     expect(browser.masks).toHaveLength(1);
-    expect(browser.masks[0]?.boundingBox).toEqual({ x: 70, y: 20, width: 60, height: 20 });
+    expect(browser.masks[0]?.boundingBox).toEqual({ x: 69, y: 19, width: 62, height: 22 });
     expect(browser.masks[0]?.label).toMatch(/^\[PERSON_[A-Z2-7]{16}\]$/);
     expect(observation.maskedText).toContain("성명:");
     expect(observation.maskedText).not.toContain("홍길동");
@@ -224,7 +224,7 @@ describe("SecureComputerService", () => {
     const observation = await service.observe();
 
     expect(browser.masks).toHaveLength(1);
-    expect(browser.masks[0]?.boundingBox).toEqual({ x: 70, y: 20, width: 60, height: 20 });
+    expect(browser.masks[0]?.boundingBox).toEqual({ x: 69, y: 19, width: 62, height: 22 });
     expect(observation.maskedText).toContain("성명:");
     expect(observation.maskedText).not.toContain("홍길동");
     expect(observation.maskedText).toContain("신청유형:지급명령");

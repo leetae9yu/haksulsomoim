@@ -106,11 +106,15 @@ const mapSegmentRegion = (
   const box = segment.candidate.boundingBox;
   const startRatio = localStart / segment.candidate.text.length;
   const endRatio = localEnd / segment.candidate.text.length;
+  const left = Math.max(0, Math.floor(box.x + box.width * startRatio) - 1);
+  const top = Math.max(0, Math.floor(box.y) - 1);
+  const right = Math.ceil(box.x + box.width * endRatio) + 1;
+  const bottom = Math.ceil(box.y + box.height) + 1;
   return {
-    x: box.x + box.width * startRatio,
-    y: box.y,
-    width: box.width * (endRatio - startRatio),
-    height: box.height,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
   };
 };
 
