@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import type {
-  ScreenMaskRegion,
   SecureBrowserPort,
   SecureComputerAction,
   SecureComputerActionResult,
@@ -11,6 +10,7 @@ import { secureComputerActionSchema } from "../contracts/secure-computer";
 import { SecureComputerActionGate } from "./action-gate";
 import type { Redactor } from "./redaction";
 import { SecureComputerRedactionSession } from "./redaction-session";
+import { redactScreenCandidates } from "./screen-redaction";
 
 export const MAX_MASKED_IMAGE_BYTES = 3_000_000;
 
@@ -27,38 +27,6 @@ const rejected = (reason: string, actionCount: number): SecureComputerActionResu
   reason,
   actionCount,
 });
-
-const overlaps = (
-  left: ScreenMaskRegion["boundingBox"],
-  right: ScreenMaskRegion["boundingBox"],
-): boolean =>
-  left.x < right.x + right.width &&
-  left.x + left.width > right.x &&
-  left.y < right.y + right.height &&
-  left.y + left.height > right.y;
-
-const contains = (
-  outer: ScreenMaskRegion["boundingBox"],
-  inner: ScreenMaskRegion["boundingBox"],
-): boolean =>
-  outer.x <= inner.x &&
-  outer.y <= inner.y &&
-  outer.x + outer.width >= inner.x + inner.width &&
-  outer.y + outer.height >= inner.y + inner.height;
-
-const collapseMaskRegions = (regions: readonly ScreenMaskRegion[]): readonly ScreenMaskRegion[] => {
-  const collapsed: ScreenMaskRegion[] = [];
-  const largestFirst = [...regions].sort(
-    (left, right) =>
-      right.boundingBox.width * right.boundingBox.height -
-      left.boundingBox.width * left.boundingBox.height,
-  );
-  for (const region of largestFirst) {
-    if (!collapsed.some((outer) => contains(outer.boundingBox, region.boundingBox)))
-      collapsed.push(region);
-  }
-  return collapsed;
-};
 
 export class SecureComputerService {
   readonly #browser: SecureBrowserPort;
@@ -102,23 +70,8 @@ export class SecureComputerService {
         action: { kind: "scroll", deltaX: 0, deltaY: 0, observationDigest: "0".repeat(64) },
       });
       if (origin.outcome !== "allowed") throw new Error(origin.reason);
-      const analyzed = inspection.candidates.map((candidate) => ({
-        candidate,
-        redacted: this.#redaction.redact(candidate.text),
-      }));
-      const regions = collapseMaskRegions(
-        analyzed
-          .filter(({ candidate, redacted }) => redacted.text !== candidate.text)
-          .map(({ candidate, redacted }) => ({
-            label: redacted.text,
-            boundingBox: candidate.boundingBox,
-          })),
-      );
-      const maskedText = analyzed.map(({ candidate, redacted }) =>
-        redacted.text !== candidate.text
-          ? redacted.text
-          : (regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ??
-            redacted.text),
+      const { maskedText, regions } = redactScreenCandidates(inspection.candidates, (text) =>
+        this.#redaction.redact(text),
       );
       const imagePng = await this.#browser.captureMasked(regions);
       if (imagePng.byteLength > MAX_MASKED_IMAGE_BYTES) {

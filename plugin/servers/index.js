@@ -780,9 +780,13 @@ class PlaywrightSecureBrowser {
       for (let node = walker.nextNode();node !== null && regions.length < 1000; node = walker.nextNode()) {
         if (node.textContent === null)
           continue;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        add(node.textContent, range.getBoundingClientRect());
+        for (const match of node.textContent.matchAll(/\S+/gu)) {
+          const start = match.index;
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, start + match[0].length);
+          add(match[0], range.getBoundingClientRect());
+        }
       }
       for (const element of document.querySelectorAll("input, textarea")) {
         const value = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : "";
@@ -988,6 +992,131 @@ class SecureComputerRedactionSession {
   }
 }
 
+// servers/secure-computer/screen-redaction.ts
+var verticalCenter = (candidate) => candidate.boundingBox.y + candidate.boundingBox.height / 2;
+var isSameRow = (left, right) => {
+  const minimumHeight = Math.min(left.boundingBox.height, right.boundingBox.height);
+  return Math.abs(verticalCenter(left) - verticalCenter(right)) <= Math.max(4, minimumHeight / 2);
+};
+var groupRows = (candidates) => {
+  const rows = [];
+  const topToBottom = [...candidates].sort((left, right) => verticalCenter(left) - verticalCenter(right) || left.boundingBox.x - right.boundingBox.x);
+  for (const candidate of topToBottom) {
+    const row = rows.find((current) => current.some((existing) => isSameRow(existing, candidate)));
+    if (row === undefined)
+      rows.push([candidate]);
+    else
+      row.push(candidate);
+  }
+  return rows;
+};
+var buildRun = (candidates) => {
+  let text = "";
+  const segments = [];
+  for (const candidate of candidates) {
+    if (text.length > 0)
+      text += " ";
+    const start = text.length;
+    text += candidate.text;
+    segments.push({ candidate, start, end: text.length });
+  }
+  return { text, segments };
+};
+var groupRuns = (candidates) => {
+  const runs = [];
+  for (const candidate of [...candidates].sort((left, right) => left.boundingBox.x - right.boundingBox.x)) {
+    const current = runs.at(-1);
+    const previous = current?.at(-1);
+    if (current === undefined || previous === undefined) {
+      runs.push([candidate]);
+      continue;
+    }
+    const gap = candidate.boundingBox.x - (previous.boundingBox.x + previous.boundingBox.width);
+    const maximumGap = Math.max(24, Math.max(candidate.boundingBox.height, previous.boundingBox.height) * 1.5);
+    if (gap > maximumGap)
+      runs.push([candidate]);
+    else
+      current.push(candidate);
+  }
+  return runs.map(buildRun);
+};
+var findOccurrences = (text, value) => {
+  const starts = [];
+  let offset = 0;
+  while (offset <= text.length - value.length) {
+    const start = text.indexOf(value, offset);
+    if (start < 0)
+      break;
+    starts.push(start);
+    offset = start + value.length;
+  }
+  return starts;
+};
+var mapSegmentRegion = (segment, sensitiveStart, sensitiveEnd) => {
+  const overlapStart = Math.max(segment.start, sensitiveStart);
+  const overlapEnd = Math.min(segment.end, sensitiveEnd);
+  if (overlapStart >= overlapEnd || segment.candidate.text.length === 0)
+    return;
+  const localStart = overlapStart - segment.start;
+  const localEnd = overlapEnd - segment.start;
+  const box = segment.candidate.boundingBox;
+  const startRatio = localStart / segment.candidate.text.length;
+  const endRatio = localEnd / segment.candidate.text.length;
+  return {
+    x: box.x + box.width * startRatio,
+    y: box.y,
+    width: box.width * (endRatio - startRatio),
+    height: box.height
+  };
+};
+var intersectionCoverage = (left, right) => {
+  const width = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
+  const height = Math.max(0, Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y));
+  const smallerArea = Math.min(left.width * left.height, right.width * right.height);
+  return smallerArea === 0 ? 0 : width * height / smallerArea;
+};
+var deduplicateRegions = (regions) => {
+  const precise = [];
+  const smallestFirst = [...regions].sort((left, right) => left.boundingBox.width * left.boundingBox.height - right.boundingBox.width * right.boundingBox.height);
+  for (const region of smallestFirst) {
+    if (!precise.some((existing) => existing.token === region.token && intersectionCoverage(existing.boundingBox, region.boundingBox) >= 0.8)) {
+      precise.push(region);
+    }
+  }
+  return precise;
+};
+var redactScreenCandidates = (candidates, redact) => {
+  const maskedText = [];
+  const sensitiveRegions = [];
+  let runIndex = 0;
+  for (const row of groupRows(candidates)) {
+    for (const run of groupRuns(row)) {
+      const result2 = redact(run.text);
+      maskedText.push(result2.text);
+      for (const [mappingIndex, mapping] of result2.mappings.entries()) {
+        for (const start of findOccurrences(run.text, mapping.value)) {
+          const end = start + mapping.value.length;
+          const group = `${runIndex}:${mappingIndex}:${start}`;
+          for (const segment of run.segments) {
+            const boundingBox = mapSegmentRegion(segment, start, end);
+            if (boundingBox !== undefined) {
+              sensitiveRegions.push({ boundingBox, group, token: mapping.token });
+            }
+          }
+        }
+      }
+      runIndex += 1;
+    }
+  }
+  const labelledGroups = new Set;
+  const regions = [...deduplicateRegions(sensitiveRegions)].sort((left, right) => left.boundingBox.y - right.boundingBox.y || left.boundingBox.x - right.boundingBox.x).map(({ boundingBox, group, token }) => {
+    const label = labelledGroups.has(group) ? "" : token;
+    labelledGroups.add(group);
+    return { boundingBox, label };
+  });
+  return { maskedText, regions };
+};
+
 // servers/secure-computer/secure-computer-service.ts
 var MAX_MASKED_IMAGE_BYTES = 3000000;
 var rejected = (reason, actionCount) => ({
@@ -995,17 +1124,6 @@ var rejected = (reason, actionCount) => ({
   reason,
   actionCount
 });
-var overlaps = (left, right) => left.x < right.x + right.width && left.x + left.width > right.x && left.y < right.y + right.height && left.y + left.height > right.y;
-var contains = (outer, inner) => outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height;
-var collapseMaskRegions = (regions) => {
-  const collapsed = [];
-  const largestFirst = [...regions].sort((left, right) => right.boundingBox.width * right.boundingBox.height - left.boundingBox.width * left.boundingBox.height);
-  for (const region of largestFirst) {
-    if (!collapsed.some((outer) => contains(outer.boundingBox, region.boundingBox)))
-      collapsed.push(region);
-  }
-  return collapsed;
-};
 
 class SecureComputerService {
   #browser;
@@ -1048,15 +1166,7 @@ class SecureComputerService {
       });
       if (origin.outcome !== "allowed")
         throw new Error(origin.reason);
-      const analyzed = inspection.candidates.map((candidate) => ({
-        candidate,
-        redacted: this.#redaction.redact(candidate.text)
-      }));
-      const regions = collapseMaskRegions(analyzed.filter(({ candidate, redacted }) => redacted.text !== candidate.text).map(({ candidate, redacted }) => ({
-        label: redacted.text,
-        boundingBox: candidate.boundingBox
-      })));
-      const maskedText = analyzed.map(({ candidate, redacted }) => redacted.text !== candidate.text ? redacted.text : regions.find((region) => overlaps(region.boundingBox, candidate.boundingBox))?.label ?? redacted.text);
+      const { maskedText, regions } = redactScreenCandidates(inspection.candidates, (text2) => this.#redaction.redact(text2));
       const imagePng = await this.#browser.captureMasked(regions);
       if (imagePng.byteLength > MAX_MASKED_IMAGE_BYTES) {
         throw new RangeError(`Masked screenshot exceeds the byte limit of ${MAX_MASKED_IMAGE_BYTES}`);
