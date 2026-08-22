@@ -25,9 +25,6 @@ interface PlaywrightSecureBrowserOptions {
   readonly viewport?: Readonly<{ width: number; height: number }>;
 }
 
-const candidateKey = (candidate: ScreenTextRegion): string =>
-  `${candidate.text}\0${candidate.boundingBox.x}:${candidate.boundingBox.y}:${candidate.boundingBox.width}:${candidate.boundingBox.height}`;
-
 const waitForRenderedBody = async (page: Page): Promise<void> => {
   await page.evaluate(
     (timeoutMs) =>
@@ -62,6 +59,59 @@ const waitForRenderedBody = async (page: Page): Promise<void> => {
       }),
     30_000,
   );
+};
+
+export const deduplicateScreenCandidates = (
+  candidates: readonly ScreenTextRegion[],
+): readonly ScreenTextRegion[] => {
+  const unique: ScreenTextRegion[] = [];
+  for (const candidate of candidates) {
+    if (
+      unique.some((existing) => {
+        const authoritativeDomOverlap = existing.source === "dom" && candidate.source === "ocr";
+        if (existing.text !== candidate.text && !authoritativeDomOverlap) return false;
+        const left = existing.boundingBox;
+        const right = candidate.boundingBox;
+        const width = Math.max(
+          0,
+          Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x),
+        );
+        const height = Math.max(
+          0,
+          Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y),
+        );
+        const intersectionArea = width * height;
+        const candidateArea = right.width * right.height;
+        const smallerArea = Math.min(left.width * left.height, right.width * right.height);
+        if (existing.text === candidate.text) {
+          return smallerArea > 0 && intersectionArea / smallerArea >= 0.7;
+        }
+        return candidateArea > 0 && intersectionArea / candidateArea >= 0.8;
+      })
+    ) {
+      continue;
+    }
+    unique.push(candidate);
+  }
+  return unique;
+};
+
+export const intersectMaskRegion = (
+  region: ScreenMaskRegion,
+  viewport: Readonly<{ width: number; height: number }>,
+): ScreenMaskRegion | undefined => {
+  const box = region.boundingBox;
+  const left = Math.max(0, box.x);
+  const top = Math.max(0, box.y);
+  const right = Math.min(viewport.width, box.x + box.width);
+  const bottom = Math.min(viewport.height, box.y + box.height);
+  if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) {
+    return undefined;
+  }
+  return {
+    label: region.label,
+    boundingBox: { x: left, y: top, width: right - left, height: bottom - top },
+  };
 };
 
 export class PlaywrightSecureBrowser implements SecureBrowserPort {
@@ -115,13 +165,21 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
       this.#readDomCandidates(page),
       this.#ocr.recognize(screenshot),
     ]);
-    const candidates = this.#deduplicate([...domCandidates, ...ocrCandidates]);
+    const candidates = deduplicateScreenCandidates([
+      ...domCandidates,
+      ...ocrCandidates.map((candidate) => ({ ...candidate, source: "ocr" as const })),
+    ]);
     const viewport = page.viewportSize() ?? this.#viewport;
     return { url: page.url(), width: viewport.width, height: viewport.height, candidates };
   }
 
   async captureMasked(regions: readonly ScreenMaskRegion[]): Promise<Uint8Array> {
     const page = this.#requirePage();
+    const viewport = page.viewportSize() ?? this.#viewport;
+    const visibleRegions = regions.flatMap((region) => {
+      const visible = intersectMaskRegion(region, viewport);
+      return visible === undefined ? [] : [visible];
+    });
     await page.evaluate((masks) => {
       document.querySelector("[data-haksul-redaction-layer]")?.remove();
       const layer = document.createElement("div");
@@ -151,7 +209,7 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
         layer.append(box);
       }
       document.documentElement.append(layer);
-    }, regions);
+    }, visibleRegions);
     try {
       return await page.screenshot({ type: "png" });
     } finally {
@@ -215,12 +273,25 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
   async #readDomCandidates(page: Page): Promise<readonly ScreenTextRegion[]> {
     return page.evaluate(() => {
       const regions: ScreenTextRegion[] = [];
-      const add = (text: string, rect: DOMRect): void => {
+      const contextIds = new Map<Element, string>();
+      const contextFor = (node: Node): string | undefined => {
+        const element = node instanceof Element ? node : node.parentElement;
+        const root = element?.closest("dl > div, fieldset, label, li, tr, [role='row']");
+        if (root === null || root === undefined) return undefined;
+        const existing = contextIds.get(root);
+        if (existing !== undefined) return existing;
+        const context = `dom-context-${contextIds.size + 1}`;
+        contextIds.set(root, context);
+        return context;
+      };
+      const add = (text: string, rect: DOMRect, context?: string): void => {
         const normalized = text.trim();
         if (normalized.length === 0 || rect.width <= 0 || rect.height <= 0) return;
         regions.push({
           text: normalized.slice(0, 2_000),
           boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          source: "dom",
+          ...(context === undefined ? {} : { context }),
         });
       };
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -235,7 +306,7 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
           const range = document.createRange();
           range.setStart(node, start);
           range.setEnd(node, start + match[0].length);
-          add(match[0], range.getBoundingClientRect());
+          add(match[0], range.getBoundingClientRect(), contextFor(node));
         }
       }
       for (const element of document.querySelectorAll("input, textarea")) {
@@ -243,16 +314,10 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
           element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
             ? element.value
             : "";
-        add(value, element.getBoundingClientRect());
+        add(value, element.getBoundingClientRect(), contextFor(element));
       }
       return regions;
     });
-  }
-
-  #deduplicate(candidates: readonly ScreenTextRegion[]): readonly ScreenTextRegion[] {
-    return [
-      ...new Map(candidates.map((candidate) => [candidateKey(candidate), candidate])).values(),
-    ];
   }
 
   async #nextPaint(page: Page): Promise<void> {

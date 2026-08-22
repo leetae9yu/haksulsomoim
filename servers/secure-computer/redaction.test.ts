@@ -31,4 +31,16 @@ describe("secure-computer redaction", () => {
     session.dispose();
     expect(() => session.rehydrate(token ?? "")).toThrow("disposed");
   });
+
+  test("recognizes Korean litigation roles and multi-level addresses", () => {
+    const redactor = new Redactor(new Uint8Array(32).fill(0x6a));
+    const result = redactor.redactWithMappings(
+      "case-court-form",
+      "채무자: 김철수 / 주소: 경기도 성남시 분당구 판교로 45",
+    );
+
+    expect(result.text).not.toContain("김철수");
+    expect(result.text).not.toContain("경기도 성남시 분당구 판교로 45");
+    expect(result.mappings.map(({ kind }) => kind)).toEqual(["PERSON", "ADDRESS"]);
+  });
 });

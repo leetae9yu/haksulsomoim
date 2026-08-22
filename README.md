@@ -122,12 +122,16 @@ bun run qa:law
 bun run qa:secure-computer
 bun run qa:ocr
 bun run qa:court
+bun run qa:court-mock
 bun run build
 ```
 
 사용자 수동 QA 절차는 `docs/MANUAL_QA.md`에 있습니다.
 마스킹 PNG를 직접 검수한 시각 QA 보고서는
 [`docs/qa/2026-08-22-secure-computer/README.md`](docs/qa/2026-08-22-secure-computer/README.md)에
+있습니다.
+법원형 Mock의 desktop·mobile 시각 QA 보고서는
+[`docs/qa/2026-08-22-court-style-mock/README.md`](docs/qa/2026-08-22-court-style-mock/README.md)에
 있습니다.
 
 ## 공식 패키징 문서
