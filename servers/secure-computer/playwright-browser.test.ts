@@ -43,7 +43,8 @@ describe("PlaywrightSecureBrowser", () => {
                 <script>
                   window.addEventListener("load", async () => {
                     await fetch("/ready");
-                    document.body.innerHTML = "<main><button>전자소송포털 로그인</button></main>";
+                    document.body.innerHTML =
+                      "<main><div>성명: 홍길동 신청유형: 지급명령</div><button>전자소송포털 로그인</button></main>";
                   });
                 </script>
               </html>`,
@@ -68,7 +69,13 @@ describe("PlaywrightSecureBrowser", () => {
       releaseReadyResponse.resolve();
       await start;
       const inspection = await browser.inspect();
-      expect(inspection.candidates.some(({ text }) => text.includes("전자소송포털"))).toBe(true);
+      const texts = inspection.candidates.map(({ text }) => text);
+      expect(texts).toContain("성명:");
+      expect(texts).toContain("홍길동");
+      expect(texts).toContain("신청유형:");
+      expect(texts).toContain("지급명령");
+      expect(texts).toContain("전자소송포털");
+      expect(texts).toContain("로그인");
     } finally {
       releaseReadyResponse.resolve();
       await start.catch(() => undefined);

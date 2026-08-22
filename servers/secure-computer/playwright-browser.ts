@@ -230,9 +230,13 @@ export class PlaywrightSecureBrowser implements SecureBrowserPort {
         node = walker.nextNode()
       ) {
         if (node.textContent === null) continue;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        add(node.textContent, range.getBoundingClientRect());
+        for (const match of node.textContent.matchAll(/\S+/gu)) {
+          const start = match.index;
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, start + match[0].length);
+          add(match[0], range.getBoundingClientRect());
+        }
       }
       for (const element of document.querySelectorAll("input, textarea")) {
         const value =

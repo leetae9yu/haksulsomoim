@@ -19,6 +19,12 @@ const deferred = <T>() => {
 class FakeBrowser implements SecureBrowserPort {
   readonly typed: string[] = [];
   masks: readonly ScreenMaskRegion[] = [];
+  candidates: readonly SecureBrowserInspection["candidates"][number][] = [
+    {
+      text: "전화 010-1234-5678",
+      boundingBox: { x: 10, y: 10, width: 180, height: 30 },
+    },
+  ];
   image = new TextEncoder().encode("masked-png");
   target: SecureBrowserTarget = { text: "연락처", tagName: "INPUT", inputType: "text" };
   startedUrl = "";
@@ -32,12 +38,7 @@ class FakeBrowser implements SecureBrowserPort {
       url: this.startedUrl,
       width: 800,
       height: 600,
-      candidates: [
-        {
-          text: "전화 010-1234-5678",
-          boundingBox: { x: 10, y: 10, width: 180, height: 30 },
-        },
-      ],
+      candidates: this.candidates,
     };
   }
 
@@ -173,6 +174,60 @@ describe("SecureComputerService", () => {
         observationDigest: previous.observationDigest,
       }),
     ).toEqual({ outcome: "rejected", reason: "stale-observation", actionCount: 0 });
+    await service.close();
+  });
+
+  test("uses adjacent context to mask only a split person token", async () => {
+    const browser = new FakeBrowser();
+    browser.candidates = [
+      { text: "성명:", boundingBox: { x: 10, y: 20, width: 50, height: 20 } },
+      { text: "홍길동", boundingBox: { x: 70, y: 20, width: 60, height: 20 } },
+      { text: "신청유형:", boundingBox: { x: 150, y: 20, width: 80, height: 20 } },
+      { text: "지급명령", boundingBox: { x: 240, y: 20, width: 80, height: 20 } },
+    ];
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-e",
+      redactor: new Redactor(new Uint8Array(32).fill(7)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+
+    const observation = await service.observe();
+
+    expect(browser.masks).toHaveLength(1);
+    expect(browser.masks[0]?.boundingBox).toEqual({ x: 70, y: 20, width: 60, height: 20 });
+    expect(browser.masks[0]?.label).toMatch(/^\[PERSON_[A-Z2-7]{16}\]$/);
+    expect(observation.maskedText).toContain("성명:");
+    expect(observation.maskedText).not.toContain("홍길동");
+    expect(observation.maskedText).toContain("신청유형:");
+    expect(observation.maskedText).toContain("지급명령");
+    await service.close();
+  });
+
+  test("masks only the sensitive substring inside one OCR box", async () => {
+    const browser = new FakeBrowser();
+    browser.candidates = [
+      { text: "성명:홍길동", boundingBox: { x: 10, y: 20, width: 120, height: 20 } },
+      { text: "신청유형:지급명령", boundingBox: { x: 150, y: 20, width: 180, height: 20 } },
+    ];
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-f",
+      redactor: new Redactor(new Uint8Array(32).fill(8)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+
+    const observation = await service.observe();
+
+    expect(browser.masks).toHaveLength(1);
+    expect(browser.masks[0]?.boundingBox).toEqual({ x: 70, y: 20, width: 60, height: 20 });
+    expect(observation.maskedText).toContain("성명:");
+    expect(observation.maskedText).not.toContain("홍길동");
+    expect(observation.maskedText).toContain("신청유형:지급명령");
     await service.close();
   });
 });
