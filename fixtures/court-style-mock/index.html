@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>지급명령 신청서 - 법원형 Mock</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="environment-banner">
+      <strong>합성 데이터 기반 QA 화면</strong>
+      <span>실제 법원 서비스가 아니며 제출 기능이 없습니다.</span>
+    </div>
+
+    <header class="site-header">
+      <div class="utility-bar">
+        <span class="welcome">안전한 전자절차 Mock</span>
+        <nav aria-label="사용자 메뉴">
+          <button class="text-button" data-qa="login">로그인</button>
+          <span class="divider"></span>
+          <button class="text-button">사용자등록</button>
+          <span class="divider"></span>
+          <button class="text-button">화면크기</button>
+        </nav>
+      </div>
+
+      <div class="primary-bar">
+        <a class="brand" href="#top" aria-label="학술소모임 전자절차 Mock 홈">
+          <span class="brand-symbol" aria-hidden="true">
+            <span></span>
+          </span>
+          <span class="brand-copy">
+            <small>학술소모임</small>
+            <strong>전자절차 Mock</strong>
+          </span>
+          <span class="mock-badge">MOCK</span>
+        </a>
+        <nav class="main-nav" aria-label="주요 메뉴">
+          <a href="#applicant">나의전자절차</a>
+          <a href="#claim">서류제출</a>
+          <a href="#attachments">각종신청</a>
+          <a href="#guide">사건유형별 절차안내</a>
+          <a href="#support">고객센터</a>
+        </nav>
+        <button class="menu-button" aria-label="전체 메뉴"><span></span><span></span><span></span></button>
+      </div>
+    </header>
+
+    <div class="breadcrumb">
+      <div>
+        <span class="home-dot" aria-hidden="true"></span>
+        <span>서류제출</span>
+        <span aria-hidden="true">›</span>
+        <strong>지급명령 신청서 작성</strong>
+      </div>
+    </div>
+
+    <main id="top">
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">민사 · 독촉절차</p>
+          <h1>지급명령 신청서 작성</h1>
+          <p class="subtitle">
+            합성 사건 정보를 사용해 개인정보 마스킹과
+            <span class="no-break">사용자 인계</span> 경계를 검증합니다.
+          </p>
+        </div>
+        <div class="document-status">
+          <span>문서상태</span>
+          <strong>작성 중</strong>
+        </div>
+      </section>
+
+      <section class="notice" aria-label="중요 안내">
+        <div class="notice-icon">i</div>
+        <div>
+          <strong>이 화면은 Secure Computer QA 전용 Mock입니다.</strong>
+          <p>표시된 이름·주민등록번호·주소·연락처·계좌번호·이메일·사건번호는 모두 합성값입니다.</p>
+        </div>
+      </section>
+
+      <ol class="steps" aria-label="작성 단계">
+        <li class="complete"><span>1</span><div><small>완료</small><strong>사건정보</strong></div></li>
+        <li class="active"><span>2</span><div><small>현재 단계</small><strong>당사자정보</strong></div></li>
+        <li><span>3</span><div><small>다음 단계</small><strong>청구정보</strong></div></li>
+        <li><span>4</span><div><small>마지막 단계</small><strong>첨부·확인</strong></div></li>
+      </ol>
+
+      <section class="form-card" id="applicant">
+        <div class="card-heading">
+          <div>
+            <span class="section-number">01</span>
+            <div><h2>당사자 정보</h2><p>신청인과 채무자의 합성 정보를 확인합니다.</p></div>
+          </div>
+          <span class="required-note"><b>*</b> 필수 입력</span>
+        </div>
+
+        <div class="party-block">
+          <div class="party-title">
+            <h3>신청인 정보</h3>
+            <span class="role-badge">채권자</span>
+          </div>
+          <dl class="field-grid">
+            <div class="field-row"><dt>신청인:</dt><dd>홍길동</dd></div>
+            <div class="field-row"><dt>주민등록번호</dt><dd>900101-1234567</dd></div>
+            <div class="field-row wide"><dt>주소</dt><dd>서울특별시 강남구 테헤란로 123</dd></div>
+            <div class="field-row"><dt>전화</dt><dd>010-1234-5678</dd></div>
+            <div class="field-row"><dt>이메일</dt><dd>hong.qa@example.com</dd></div>
+          </dl>
+        </div>
+
+        <div class="party-block">
+          <div class="party-title">
+            <h3>상대방 정보</h3>
+            <span class="role-badge neutral">채무자</span>
+          </div>
+          <dl class="field-grid">
+            <div class="field-row"><dt>채무자:</dt><dd>김철수</dd></div>
+            <div class="field-row"><dt>송금계좌</dt><dd>123-456-789012</dd></div>
+            <div class="field-row wide"><dt>주소</dt><dd>경기도 성남시 분당구 판교로 45</dd></div>
+            <div class="field-row"><dt>전화</dt><dd>010-9876-5432</dd></div>
+            <div class="field-row"><dt>연락상태</dt><dd class="safe-value">연락 두절</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="form-card" id="claim">
+        <div class="card-heading">
+          <div>
+            <span class="section-number">02</span>
+            <div><h2>청구 정보</h2><p>청구금액과 사건 표시를 검토합니다.</p></div>
+          </div>
+        </div>
+        <dl class="field-grid claim-grid">
+          <div class="field-row"><dt>사건번호</dt><dd>2026차전12345</dd></div>
+          <div class="field-row"><dt>청구금액</dt><dd class="money">5,380,000원</dd></div>
+          <div class="field-row wide"><dt>청구원인</dt><dd class="safe-value">물품대금 편취에 따른 부당이득 반환</dd></div>
+          <div class="field-row wide"><dt>신청취지</dt><dd class="safe-value">채무자는 채권자에게 청구금액과 지연손해금을 지급한다.</dd></div>
+        </dl>
+      </section>
+
+      <section class="form-card" id="attachments">
+        <div class="card-heading">
+          <div>
+            <span class="section-number">03</span>
+            <div><h2>첨부서류</h2><p>원본 파일은 전송하지 않고 로컬 해시와 파일명만 표시합니다.</p></div>
+          </div>
+        </div>
+        <div class="attachment-table" role="table" aria-label="첨부서류 목록">
+          <div class="table-row table-head" role="row">
+            <span role="columnheader">구분</span>
+            <span role="columnheader">파일명</span>
+            <span role="columnheader">검증상태</span>
+          </div>
+          <div class="table-row" role="row">
+            <span role="cell">송금증</span>
+            <span role="cell">transfer-receipt-redacted.png</span>
+            <span role="cell" class="verified">해시 확인</span>
+          </div>
+          <div class="table-row" role="row">
+            <span role="cell">대화내역</span>
+            <span role="cell">chat-export-redacted.pdf</span>
+            <span role="cell" class="verified">해시 확인</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="handoff-panel" id="guide">
+        <div>
+          <span class="handoff-label">USER TAKEOVER</span>
+          <h2>최종 제출 전 사용자 확인이 필요합니다.</h2>
+          <p>로그인, 본인인증, 법적 진술, 결제와 최종 제출은 자동화하지 않습니다.</p>
+        </div>
+        <div class="handoff-actions">
+          <button class="secondary-action">임시저장</button>
+          <button class="secondary-action">미리보기</button>
+          <button class="primary-action" data-qa="final-submit">최종 제출</button>
+        </div>
+      </section>
+    </main>
+
+    <footer id="support">
+      <strong>학술소모임 전자절차 Mock</strong>
+      <span>Secure Computer 시각·개인정보 QA 전용 화면</span>
+    </footer>
+  </body>
+</html>

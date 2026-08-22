@@ -75,10 +75,28 @@ const groupRuns = (candidates: readonly ScreenTextRegion[]): readonly TextRun[] 
       24,
       Math.max(candidate.boundingBox.height, previous.boundingBox.height) * 1.5,
     );
-    if (gap > maximumGap) runs.push([candidate]);
+    const sharesContext = candidate.context !== undefined && candidate.context === previous.context;
+    if (gap > maximumGap && !sharesContext) runs.push([candidate]);
     else current.push(candidate);
   }
   return runs.map(buildRun);
+};
+
+const collectRuns = (candidates: readonly ScreenTextRegion[]): readonly TextRun[] => {
+  const contextual = new Map<string, ScreenTextRegion[]>();
+  const spatial: ScreenTextRegion[] = [];
+  for (const candidate of candidates) {
+    if (candidate.context === undefined) {
+      spatial.push(candidate);
+      continue;
+    }
+    const group = contextual.get(candidate.context);
+    if (group === undefined) contextual.set(candidate.context, [candidate]);
+    else group.push(candidate);
+  }
+  const contextualRuns = [...contextual.values()].map(buildRun);
+  const spatialRuns = groupRows(spatial).flatMap(groupRuns);
+  return [...contextualRuns, ...spatialRuns];
 };
 
 const findOccurrences = (text: string, value: string): readonly number[] => {
@@ -162,24 +180,22 @@ export const redactScreenCandidates = (
   const maskedText: string[] = [];
   const sensitiveRegions: SensitiveRegion[] = [];
   let runIndex = 0;
-  for (const row of groupRows(candidates)) {
-    for (const run of groupRuns(row)) {
-      const result = redact(run.text);
-      maskedText.push(result.text);
-      for (const [mappingIndex, mapping] of result.mappings.entries()) {
-        for (const start of findOccurrences(run.text, mapping.value)) {
-          const end = start + mapping.value.length;
-          const group = `${runIndex}:${mappingIndex}:${start}`;
-          for (const segment of run.segments) {
-            const boundingBox = mapSegmentRegion(segment, start, end);
-            if (boundingBox !== undefined) {
-              sensitiveRegions.push({ boundingBox, group, token: mapping.token });
-            }
+  for (const run of collectRuns(candidates)) {
+    const result = redact(run.text);
+    maskedText.push(result.text);
+    for (const [mappingIndex, mapping] of result.mappings.entries()) {
+      for (const start of findOccurrences(run.text, mapping.value)) {
+        const end = start + mapping.value.length;
+        const group = `${runIndex}:${mappingIndex}:${start}`;
+        for (const segment of run.segments) {
+          const boundingBox = mapSegmentRegion(segment, start, end);
+          if (boundingBox !== undefined) {
+            sensitiveRegions.push({ boundingBox, group, token: mapping.token });
           }
         }
       }
-      runIndex += 1;
     }
+    runIndex += 1;
   }
   const labelledGroups = new Set<string>();
   const regions = [...deduplicateRegions(sensitiveRegions)]

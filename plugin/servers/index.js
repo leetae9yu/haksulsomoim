@@ -595,7 +595,6 @@ import { platform } from "node:os";
 import {
   chromium
 } from "playwright-core";
-var candidateKey = (candidate) => `${candidate.text}\x00${candidate.boundingBox.x}:${candidate.boundingBox.y}:${candidate.boundingBox.width}:${candidate.boundingBox.height}`;
 var waitForRenderedBody = async (page) => {
   await page.evaluate((timeoutMs) => new Promise((resolve2, reject) => {
     const hasRenderedContent = () => {
@@ -627,6 +626,45 @@ var waitForRenderedBody = async (page) => {
       reject(new Error(`Page did not render observable content within ${timeoutMs}ms`));
     }, timeoutMs);
   }), 30000);
+};
+var deduplicateScreenCandidates = (candidates) => {
+  const unique = [];
+  for (const candidate of candidates) {
+    if (unique.some((existing) => {
+      const authoritativeDomOverlap = existing.source === "dom" && candidate.source === "ocr";
+      if (existing.text !== candidate.text && !authoritativeDomOverlap)
+        return false;
+      const left = existing.boundingBox;
+      const right = candidate.boundingBox;
+      const width = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
+      const height = Math.max(0, Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y));
+      const intersectionArea = width * height;
+      const candidateArea = right.width * right.height;
+      const smallerArea = Math.min(left.width * left.height, right.width * right.height);
+      if (existing.text === candidate.text) {
+        return smallerArea > 0 && intersectionArea / smallerArea >= 0.7;
+      }
+      return candidateArea > 0 && intersectionArea / candidateArea >= 0.8;
+    })) {
+      continue;
+    }
+    unique.push(candidate);
+  }
+  return unique;
+};
+var intersectMaskRegion = (region, viewport) => {
+  const box = region.boundingBox;
+  const left = Math.max(0, box.x);
+  const top = Math.max(0, box.y);
+  const right = Math.min(viewport.width, box.x + box.width);
+  const bottom = Math.min(viewport.height, box.y + box.height);
+  if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) {
+    return;
+  }
+  return {
+    label: region.label,
+    boundingBox: { x: left, y: top, width: right - left, height: bottom - top }
+  };
 };
 
 class PlaywrightSecureBrowser {
@@ -675,12 +713,20 @@ class PlaywrightSecureBrowser {
       this.#readDomCandidates(page),
       this.#ocr.recognize(screenshot)
     ]);
-    const candidates = this.#deduplicate([...domCandidates, ...ocrCandidates]);
+    const candidates = deduplicateScreenCandidates([
+      ...domCandidates,
+      ...ocrCandidates.map((candidate) => ({ ...candidate, source: "ocr" }))
+    ]);
     const viewport = page.viewportSize() ?? this.#viewport;
     return { url: page.url(), width: viewport.width, height: viewport.height, candidates };
   }
   async captureMasked(regions) {
     const page = this.#requirePage();
+    const viewport = page.viewportSize() ?? this.#viewport;
+    const visibleRegions = regions.flatMap((region) => {
+      const visible = intersectMaskRegion(region, viewport);
+      return visible === undefined ? [] : [visible];
+    });
     await page.evaluate((masks) => {
       document.querySelector("[data-haksul-redaction-layer]")?.remove();
       const layer = document.createElement("div");
@@ -710,7 +756,7 @@ class PlaywrightSecureBrowser {
         layer.append(box);
       }
       document.documentElement.append(layer);
-    }, regions);
+    }, visibleRegions);
     try {
       return await page.screenshot({ type: "png" });
     } finally {
@@ -767,13 +813,28 @@ class PlaywrightSecureBrowser {
   async#readDomCandidates(page) {
     return page.evaluate(() => {
       const regions = [];
-      const add = (text, rect) => {
+      const contextIds = new Map;
+      const contextFor = (node) => {
+        const element = node instanceof Element ? node : node.parentElement;
+        const root = element?.closest("dl > div, fieldset, label, li, tr, [role='row']");
+        if (root === null || root === undefined)
+          return;
+        const existing = contextIds.get(root);
+        if (existing !== undefined)
+          return existing;
+        const context = `dom-context-${contextIds.size + 1}`;
+        contextIds.set(root, context);
+        return context;
+      };
+      const add = (text, rect, context) => {
         const normalized = text.trim();
         if (normalized.length === 0 || rect.width <= 0 || rect.height <= 0)
           return;
         regions.push({
           text: normalized.slice(0, 2000),
-          boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          source: "dom",
+          ...context === undefined ? {} : { context }
         });
       };
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -785,20 +846,15 @@ class PlaywrightSecureBrowser {
           const range = document.createRange();
           range.setStart(node, start);
           range.setEnd(node, start + match[0].length);
-          add(match[0], range.getBoundingClientRect());
+          add(match[0], range.getBoundingClientRect(), contextFor(node));
         }
       }
       for (const element of document.querySelectorAll("input, textarea")) {
         const value = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : "";
-        add(value, element.getBoundingClientRect());
+        add(value, element.getBoundingClientRect(), contextFor(element));
       }
       return regions;
     });
-  }
-  #deduplicate(candidates) {
-    return [
-      ...new Map(candidates.map((candidate) => [candidateKey(candidate), candidate])).values()
-    ];
   }
   async#nextPaint(page) {
     await page.evaluate(() => new Promise((resolve2) => requestAnimationFrame(() => resolve2())));
@@ -819,14 +875,14 @@ var IDENTIFIER_PATTERNS = [
   { kind: "PHONE", pattern: /(?<!\d)01[016789][ -]?\d{3,4}[ -]?\d{4}(?!\d)/g },
   {
     kind: "ADDRESS",
-    pattern: /(?:서울(?:특별시)?|부산(?:광역시)?|대구(?:광역시)?|인천(?:광역시)?|광주(?:광역시)?|대전(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|경기(?:도)?|강원(?:특별자치도|도)?|충청[남북]도|전라[남북]도|경상[남북]도|제주(?:특별자치도|도)?)\s+[가-힣0-9·]+(?:시|군|구)\s+[가-힣0-9·.-]+(?:대로|로|길|동|읍|면)\s+\d+(?:-\d+)?/gu
+    pattern: /(?:서울(?:특별시)?|부산(?:광역시)?|대구(?:광역시)?|인천(?:광역시)?|광주(?:광역시)?|대전(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|경기(?:도)?|강원(?:특별자치도|도)?|충청[남북]도|전라[남북]도|경상[남북]도|제주(?:특별자치도|도)?)\s+[가-힣0-9·]+(?:시|군|구)(?:\s+[가-힣0-9·]+(?:시|군|구))?\s+[가-힣0-9·.-]+(?:대로|로|길|동|읍|면)\s+\d+(?:-\d+)?/gu
   },
   {
     kind: "ACCOUNT",
     pattern: /(?<!\d)(?!(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?!\d))\d{2,6}(?:-\d{2,6}){2,4}(?!\d)/g
   }
 ];
-var CONTEXTUAL_PERSON = /((?:성명|이름|신청인|송금인|sender)\s*[:=]\s*)([가-힣]{2,4})(?![가-힣])/giu;
+var CONTEXTUAL_PERSON = /((?:성명|이름|신청인|송금인|채권자|채무자|원고|피고|sender)\s*[:=]\s*)([가-힣]{2,4})(?![가-힣])/giu;
 var BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 var containsDirectIdentifier = (input) => {
   if (CONTEXTUAL_PERSON.test(input)) {
@@ -1033,12 +1089,31 @@ var groupRuns = (candidates) => {
     }
     const gap = candidate.boundingBox.x - (previous.boundingBox.x + previous.boundingBox.width);
     const maximumGap = Math.max(24, Math.max(candidate.boundingBox.height, previous.boundingBox.height) * 1.5);
-    if (gap > maximumGap)
+    const sharesContext = candidate.context !== undefined && candidate.context === previous.context;
+    if (gap > maximumGap && !sharesContext)
       runs.push([candidate]);
     else
       current.push(candidate);
   }
   return runs.map(buildRun);
+};
+var collectRuns = (candidates) => {
+  const contextual = new Map;
+  const spatial = [];
+  for (const candidate of candidates) {
+    if (candidate.context === undefined) {
+      spatial.push(candidate);
+      continue;
+    }
+    const group = contextual.get(candidate.context);
+    if (group === undefined)
+      contextual.set(candidate.context, [candidate]);
+    else
+      group.push(candidate);
+  }
+  const contextualRuns = [...contextual.values()].map(buildRun);
+  const spatialRuns = groupRows(spatial).flatMap(groupRuns);
+  return [...contextualRuns, ...spatialRuns];
 };
 var findOccurrences = (text, value) => {
   const starts = [];
@@ -1093,24 +1168,22 @@ var redactScreenCandidates = (candidates, redact) => {
   const maskedText = [];
   const sensitiveRegions = [];
   let runIndex = 0;
-  for (const row of groupRows(candidates)) {
-    for (const run of groupRuns(row)) {
-      const result2 = redact(run.text);
-      maskedText.push(result2.text);
-      for (const [mappingIndex, mapping] of result2.mappings.entries()) {
-        for (const start of findOccurrences(run.text, mapping.value)) {
-          const end = start + mapping.value.length;
-          const group = `${runIndex}:${mappingIndex}:${start}`;
-          for (const segment of run.segments) {
-            const boundingBox = mapSegmentRegion(segment, start, end);
-            if (boundingBox !== undefined) {
-              sensitiveRegions.push({ boundingBox, group, token: mapping.token });
-            }
+  for (const run of collectRuns(candidates)) {
+    const result2 = redact(run.text);
+    maskedText.push(result2.text);
+    for (const [mappingIndex, mapping] of result2.mappings.entries()) {
+      for (const start of findOccurrences(run.text, mapping.value)) {
+        const end = start + mapping.value.length;
+        const group = `${runIndex}:${mappingIndex}:${start}`;
+        for (const segment of run.segments) {
+          const boundingBox = mapSegmentRegion(segment, start, end);
+          if (boundingBox !== undefined) {
+            sensitiveRegions.push({ boundingBox, group, token: mapping.token });
           }
         }
       }
-      runIndex += 1;
     }
+    runIndex += 1;
   }
   const labelledGroups = new Set;
   const regions = [...deduplicateRegions(sensitiveRegions)].sort((left, right) => left.boundingBox.y - right.boundingBox.y || left.boundingBox.x - right.boundingBox.x).map(({ boundingBox, group, token }) => {

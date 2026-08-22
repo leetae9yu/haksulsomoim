@@ -230,4 +230,99 @@ describe("SecureComputerService", () => {
     expect(observation.maskedText).toContain("신청유형:지급명령");
     await service.close();
   });
+
+  test("uses semantic field context across a wide label column", async () => {
+    const browser = new FakeBrowser();
+    browser.candidates = [
+      {
+        text: "채무자:",
+        boundingBox: { x: 10, y: 20, width: 50, height: 20 },
+        context: "field-debtor",
+      },
+      {
+        text: "김철수",
+        boundingBox: { x: 160, y: 19, width: 60, height: 20 },
+        context: "field-debtor",
+      },
+      {
+        text: "신청유형:",
+        boundingBox: { x: 300, y: 20, width: 80, height: 20 },
+        context: "field-safe",
+      },
+      {
+        text: "지급명령",
+        boundingBox: { x: 390, y: 20, width: 80, height: 20 },
+        context: "field-safe",
+      },
+    ];
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-g",
+      redactor: new Redactor(new Uint8Array(32).fill(9)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+
+    const observation = await service.observe();
+
+    expect(browser.masks).toHaveLength(1);
+    expect(browser.masks[0]?.boundingBox).toEqual({ x: 159, y: 18, width: 62, height: 22 });
+    expect(observation.maskedText).toContain("채무자:");
+    expect(observation.maskedText).not.toContain("김철수");
+    expect(observation.maskedText).toContain("신청유형: 지급명령");
+    await service.close();
+  });
+
+  test("keeps a wrapped address in one semantic field context", async () => {
+    const browser = new FakeBrowser();
+    browser.candidates = [
+      {
+        text: "주소",
+        boundingBox: { x: 10, y: 20, width: 30, height: 20 },
+        context: "field-address",
+      },
+      {
+        text: "경기도",
+        boundingBox: { x: 120, y: 20, width: 45, height: 20 },
+        context: "field-address",
+      },
+      {
+        text: "성남시",
+        boundingBox: { x: 170, y: 20, width: 45, height: 20 },
+        context: "field-address",
+      },
+      {
+        text: "분당구",
+        boundingBox: { x: 220, y: 20, width: 45, height: 20 },
+        context: "field-address",
+      },
+      {
+        text: "판교로",
+        boundingBox: { x: 270, y: 20, width: 45, height: 20 },
+        context: "field-address",
+      },
+      {
+        text: "45",
+        boundingBox: { x: 120, y: 45, width: 22, height: 20 },
+        context: "field-address",
+      },
+    ];
+    const service = new SecureComputerService({
+      browser,
+      caseId: "case-h",
+      redactor: new Redactor(new Uint8Array(32).fill(10)),
+      allowedHosts: ["ecfs.scourt.go.kr"],
+      maxActions: 3,
+    });
+    await service.start("https://ecfs.scourt.go.kr/ecf/index.jsp");
+
+    const observation = await service.observe();
+
+    expect(browser.masks).toHaveLength(5);
+    expect(observation.maskedText).toContain("주소");
+    expect(observation.maskedText).toContain("[ADDRESS_");
+    expect(observation.maskedText).not.toContain("경기도 성남시 분당구 판교로 45");
+    await service.close();
+  });
 });

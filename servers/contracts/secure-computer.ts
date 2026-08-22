@@ -36,6 +36,8 @@ export type SecureComputerAction = z.infer<typeof secureComputerActionSchema>;
 export interface ScreenTextRegion {
   readonly text: string;
   readonly boundingBox: OcrBoundingBox;
+  readonly context?: string;
+  readonly source?: "dom" | "ocr";
 }
 
 export interface ScreenMaskRegion {
