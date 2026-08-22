@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "haksulsomoim-local": {
+      "command": "node",
+      "args": ["servers/index.js"],
+      "cwd": "."
+    },
+    "korean-law": {
+      "command": "npx",
+      "args": ["--yes", "korean-law-mcp@4.9.6"]
+    }
+  }
+}
