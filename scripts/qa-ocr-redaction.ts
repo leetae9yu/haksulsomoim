@@ -1,4 +1,5 @@
-import { access } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ScreenMaskRegion } from "../servers/contracts/secure-computer";
 import { createLocalKorEngOcr } from "../servers/secure-computer/local-ocr";
 import { PlaywrightSecureBrowser } from "../servers/secure-computer/playwright-browser";
@@ -43,6 +44,7 @@ const server = Bun.serve({
   fetch: () => new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } }),
 });
 const executablePath = process.env.HAKSUL_BROWSER_EXECUTABLE ?? "/usr/bin/chromium-browser";
+const evidenceDirectory = process.env.QA_EVIDENCE_DIR;
 await access(executablePath);
 const browser = new RecordingBrowser({
   ocr: await createLocalKorEngOcr(),
@@ -78,6 +80,12 @@ try {
       `Expected ${tokenKinds.length} precise masks, received ${browser.masks.length}`,
     );
   }
+  let capture: string | undefined;
+  if (evidenceDirectory !== undefined) {
+    await mkdir(evidenceDirectory, { recursive: true });
+    capture = join(evidenceDirectory, "ocr-identifiers-masked.png");
+    await writeFile(capture, observation.imagePng);
+  }
   process.stdout.write(
     `${JSON.stringify({
       scenario: "ocr-only-precise-redaction",
@@ -86,6 +94,7 @@ try {
       maskCount: browser.masks.length,
       preservedSafeText: true,
       imageBytes: observation.imagePng.byteLength,
+      capture,
     })}\n`,
   );
 } finally {

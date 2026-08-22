@@ -1,4 +1,5 @@
-import { access } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createLocalKorEngOcr } from "../servers/secure-computer/local-ocr";
 import { PlaywrightSecureBrowser } from "../servers/secure-computer/playwright-browser";
 import { containsDirectIdentifier, Redactor } from "../servers/secure-computer/redaction";
@@ -6,6 +7,15 @@ import { SecureComputerService } from "../servers/secure-computer/secure-compute
 
 const portalUrl = "https://ecfs.scourt.go.kr/psp/index.on?m=PSP004M01";
 const executablePath = process.env.HAKSUL_BROWSER_EXECUTABLE ?? "/usr/bin/chromium-browser";
+const evidenceDirectory = process.env.QA_EVIDENCE_DIR;
+const captures: string[] = [];
+const saveCapture = async (name: string, image: Uint8Array): Promise<void> => {
+  if (evidenceDirectory === undefined) return;
+  await mkdir(evidenceDirectory, { recursive: true });
+  const path = join(evidenceDirectory, name);
+  await writeFile(path, image);
+  captures.push(path);
+};
 await access(executablePath);
 const browser = new PlaywrightSecureBrowser({
   ocr: await createLocalKorEngOcr(),
@@ -41,7 +51,9 @@ try {
     observationDigest: initial.observationDigest,
   });
   if (scrollDown.outcome !== "executed") throw new Error("Portal scroll was not executed");
+  await saveCapture("court-initial-masked.png", initial.imagePng);
   const scrolled = await computer.observe();
+  await saveCapture("court-scrolled-masked.png", scrolled.imagePng);
   const scrollUp = await computer.act({
     kind: "scroll",
     deltaX: 0,
@@ -50,6 +62,7 @@ try {
   });
   if (scrollUp.outcome !== "executed") throw new Error("Portal return scroll was not executed");
   const restored = await computer.observe();
+  await saveCapture("court-restored-masked.png", restored.imagePng);
 
   const inspection = await browser.inspect();
   const login = inspection.candidates.find(({ text }) => text.trim() === "로그인");
@@ -82,6 +95,7 @@ try {
       safeActions: [scrollDown.outcome, scrollUp.outcome],
       loginHandoff: loginHandoff.outcome,
       loginReason: loginHandoff.reason,
+      captures,
     })}\n`,
   );
 } finally {
