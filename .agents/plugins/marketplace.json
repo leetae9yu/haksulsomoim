@@ -1,0 +1,20 @@
+{
+  "name": "haksulsomoim-local",
+  "interface": {
+    "displayName": "학술소모임 소액사기 Agent"
+  },
+  "plugins": [
+    {
+      "name": "haksulsomoim-small-fraud",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Legal"
+    }
+  ]
+}

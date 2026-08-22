@@ -1,0 +1,12 @@
+{
+  "name": "haksulsomoim-small-fraud",
+  "description": "Korean small-fraud evidence, procedure, official-law, and secure portal copilot",
+  "version": "0.1.0",
+  "author": {
+    "name": "leetae9yu"
+  },
+  "repository": "https://github.com/leetae9yu/haksulsomoim",
+  "keywords": ["korean-law", "small-fraud", "evidence", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./config/claude.mcp.json"
+}

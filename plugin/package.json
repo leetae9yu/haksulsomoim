@@ -1,0 +1,18 @@
+{
+  "name": "haksulsomoim-small-fraud-plugin",
+  "version": "0.1.0",
+  "description": "Runtime dependencies for the haksulsomoim small-fraud plugin",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/kor": "1.0.0",
+    "playwright-core": "1.62.1",
+    "tesseract.js": "7.0.0",
+    "zod": "4.4.3"
+  }
+}

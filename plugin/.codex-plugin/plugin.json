@@ -1,0 +1,8 @@
+{
+  "name": "haksulsomoim-small-fraud",
+  "version": "0.1.0",
+  "description": "Korean small-fraud evidence, procedure, official-law, and secure portal copilot",
+  "skills": "./skills/",
+  "mcpServers": "./config/codex.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

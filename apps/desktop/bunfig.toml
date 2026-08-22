@@ -1,4 +1,0 @@
-[test]
-preload = ["./tests/setup.js"]
-root = "."
-

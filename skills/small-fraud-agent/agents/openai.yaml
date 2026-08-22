@@ -1,0 +1,16 @@
+interface:
+  display_name: "소액사기 사건 정리 에이전트"
+  short_description: "인터뷰로 사건 사실을 정리하고 형사·민사·집행 절차를 별도로 안내합니다."
+  default_prompt: "사용자가 확인한 사실만 사건 카드에 기록하고, 각 절차 트랙을 별도로 관리하세요. 법령 주장에는 공식 출처를 붙이세요."
+
+policy:
+  allow_implicit_invocation: false
+
+dependencies:
+  tools:
+    - type: mcp
+      value: haksulsomoim-local
+      description: "Stores the case card and evidence inventory locally, without sending raw documents off the machine."
+    - type: mcp
+      value: korean-law
+      description: "Verifies statute and court-rule citations against official Korean law sources before they are stated."
