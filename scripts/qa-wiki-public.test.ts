@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { parseCorpus } from "./qa-wiki-parse.ts";
+import { derivePublicCaseNames } from "./qa-wiki-public.ts";
 
 const summarySchema = z.record(z.string(), z.number().int().nonnegative());
 type Result = Readonly<{ exitCode: number; summary: Readonly<Record<string, number>> }>;
@@ -53,6 +54,22 @@ function expectRejected(mutator: Mutation, metric: string): void {
 }
 
 describe("Given the tracked public render contract", () => {
+  test("case names are derived in numeric ID order beyond the frozen ten", () => {
+    const files = [
+      { path: "/wiki/R20_context.md", content: "---\nid: R20\n---\n" },
+      { path: "/wiki/P11_judgment.md", content: "---\nid: P11\n---\n" },
+      { path: "/wiki/R11_trace.md", content: "---\nid: R11\n---\n" },
+      { path: "/wiki/P20_judgment.md", content: "---\nid: P20\n---\n" },
+    ];
+
+    expect(derivePublicCaseNames(files)).toEqual([
+      "P11_judgment.md",
+      "P20_judgment.md",
+      "R11_trace.md",
+      "R20_context.md",
+    ]);
+  });
+
   test.each([
     "fixtures/wiki-valid",
     "fixtures/wiki-valid-derived-synthesis",
@@ -83,10 +100,19 @@ describe("Given the tracked public render contract", () => {
     "부록_참고통계.md",
     "전체_사례_목록.md",
     "P1_렌탈가전_속여_판_중고거래_사기.md",
+    "P20_원금_반환_후에도_선고된_실형.md",
     "R1_30만원_중고거래_사기.md",
+    "R20_무료사이트_제휴숨김_소액자동결제_사건.md",
   ])("When %s is missing Then public completeness fails", (name) =>
     expectRejected((root) => unlinkSync(note(root, name)), "public-render-file-mismatches"),
   );
+
+  test("When a derived case ID disagrees with its filename Then frontmatter validation fails", () => {
+    expectRejected((root) => {
+      const path = note(root, "P20_원금_반환_후에도_선고된_실형.md");
+      writeFileSync(path, readFileSync(path, "utf8").replace("id: P20", "id: P21"));
+    }, "frontmatter-keyset-mismatches");
+  });
 
   test("When index and appendix share an ID Then duplicate public IDs fail", () => {
     expectRejected((root) => {

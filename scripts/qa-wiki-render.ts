@@ -7,7 +7,7 @@ import type { PublicFile } from "./qa-wiki-public.ts";
 import {
   citations,
   count,
-  expected,
+  expectedPublicNames,
   mismatchCounts,
   publicData,
   sha256,
@@ -39,6 +39,7 @@ export function checkRenderContract(
     (record) => record.record_type === "public_citation",
   );
   const byName = new Map(files.map((file) => [basename(file.path), file]));
+  const expected = expectedPublicNames(files);
   increment(metrics, "public-render-files", fileRecords.length);
   increment(metrics, "public-render-citations", citationRecords.length);
   const renderedPaths = count(fileRecords, (record) => record.path);

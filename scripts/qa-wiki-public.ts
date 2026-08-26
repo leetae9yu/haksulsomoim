@@ -6,34 +6,27 @@ import { increment } from "./qa-wiki-metrics.ts";
 import type { ParsedCorpus } from "./qa-wiki-parse.ts";
 import { checkRenderContract } from "./qa-wiki-render.ts";
 
-const publicP = [
-  "P1_렌탈가전_속여_판_중고거래_사기.md",
-  "P2_중고나라_57명_상대_반복_사기.md",
-  "P3_반복된_중고거래_사기.md",
-  "P4_재정난_속_거래_지속.md",
-  "P5_편취의_범의_판단기준.md",
-  "P6_부작위에_의한_기망행위.md",
-  "P7_부작위에_의한_기망의_의미.md",
-  "P8_대가_일부_지급된_경우의_편취액_산정.md",
-  "P9_중고거래_허위매물_2억원_편취.md",
-  "P10_7년간_5,600여_명_상대_조직적_중고거래.md",
-] as const;
-const publicR = [
-  "R1_30만원_중고거래_사기.md",
-  "R2_배상명령_각하_이후_민사소송으로_전환한_사례.md",
-  "R3_다수_공범_중고거래_사기.md",
-  "R4_조직적_중고거래_사기_피해.md",
-  "R5_더치트_신고_후_6개월_만에_검거.md",
-  "R6_가짜_이체확인증_사기.md",
-  "R7_조직적_사기_관련.md",
-  "R8_반복된_발송_지연.md",
-  "R9_검거_후_배상_약속_불이행.md",
-  "R10_에스크로_안전결제_도입.md",
-] as const;
 const publicIndex = "전체_사례_목록.md";
 const publicAppendix = "부록_참고통계.md";
 const publicReadme = "README.md";
-export const expected = [...publicP, ...publicR, publicIndex, publicAppendix, publicReadme];
+const caseNamePattern = /^([PR])([1-9]\d*)_.+\.md$/;
+
+export function derivePublicCaseNames(files: readonly PublicFile[]): readonly string[] {
+  return files
+    .map((file) => basename(file.path))
+    .filter((name) => caseNamePattern.test(name))
+    .toSorted((left, right) => {
+      const leftMatch = caseNamePattern.exec(left);
+      const rightMatch = caseNamePattern.exec(right);
+      if (leftMatch === null || rightMatch === null) return left.localeCompare(right);
+      const kind = (leftMatch[1] ?? "").localeCompare(rightMatch[1] ?? "");
+      return kind || Number(leftMatch[2]) - Number(rightMatch[2]);
+    });
+}
+
+export function expectedPublicNames(files: readonly PublicFile[]): readonly string[] {
+  return [...derivePublicCaseNames(files), publicIndex, publicAppendix, publicReadme];
+}
 const dataSchema = z.record(z.string(), z.unknown());
 
 export type PublicFile = Readonly<{ path: string; content: string }>;
@@ -109,9 +102,7 @@ function expectedKeys(name: string): readonly string[] {
 }
 
 function isPublicCorpus(corpus: ParsedCorpus, files: readonly PublicFile[]): boolean {
-  const caseCount = files.filter((file) =>
-    /^(?:P|R)(?:10|[1-9])_/.test(basename(file.path)),
-  ).length;
+  const caseCount = derivePublicCaseNames(files).length;
   const hasIndexOrAppendix = files.some((file) =>
     [publicIndex, publicAppendix].includes(basename(file.path)),
   );
@@ -129,8 +120,17 @@ export function checkPublicSurface(corpus: ParsedCorpus, metrics: MutableMetrics
   );
   if (!isPublicCorpus(corpus, files)) return;
   const byName = new Map(files.map((file) => [basename(file.path), file]));
+  const publicCases = derivePublicCaseNames(files);
+  const expected = expectedPublicNames(files);
   for (const name of byName.keys())
     if (!expected.includes(name)) increment(metrics, "public-render-file-mismatches");
+  for (const kind of ["P", "R"])
+    publicCases
+      .filter((name) => name.startsWith(kind))
+      .forEach((name, index) => {
+        const match = caseNamePattern.exec(name);
+        if (Number(match?.[2]) !== index + 1) increment(metrics, "frontmatter-keyset-mismatches");
+      });
   for (const name of expected) {
     const file = byName.get(name);
     if (file === undefined) {
@@ -165,12 +165,12 @@ export function checkPublicSurface(corpus: ParsedCorpus, metrics: MutableMetrics
   for (const citation of citations(files))
     if (!claims.has(citation.claimId)) increment(metrics, "dangling-ledger-ids");
   const index = byName.get(publicIndex)?.content ?? "";
-  for (const name of [...publicP, ...publicR]) {
+  for (const name of publicCases) {
     const stem = basename(name, ".md");
     const lines = index.split(/\r?\n/).filter((line) => line.includes(`[[${stem}]]`));
     if (lines.length !== 1) increment(metrics, "public-render-file-mismatches");
     else if (
-      !/(draft verified doctrine|reported|unverified|context|withheld|unresolved)/i.test(
+      !/(draft verified doctrine|verified official judgment|reported|unverified|context|withheld|unresolved)/i.test(
         lines[0] ?? "",
       )
     )

@@ -168,7 +168,7 @@ export const observationSchema = z.strictObject({
 
 export const legacySchemas = {
   P: z.strictObject({
-    id: z.string().regex(/^P(?:10|[1-9])$/),
+    id: z.string().regex(/^P[1-9]\d*$/),
     유형: z.string(),
     사건명: z.string(),
     법원_출처: z.string(),
@@ -179,7 +179,7 @@ export const legacySchemas = {
     tags: z.array(z.string()),
   }),
   R: z.strictObject({
-    id: z.string().regex(/^R(?:10|[1-9])$/),
+    id: z.string().regex(/^R[1-9]\d*$/),
     유형: z.string(),
     사건명: z.string(),
     절차구분: z.string(),

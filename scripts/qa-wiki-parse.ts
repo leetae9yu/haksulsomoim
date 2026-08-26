@@ -51,8 +51,8 @@ function legacyKind(value: unknown): "P" | "R" | "index" | undefined {
 
 function expectedLegacyKind(path: string): "P" | "R" | "index" | undefined {
   const stem = basename(path, ".md");
-  if (/^P(?:10|[1-9])_/.test(stem)) return "P";
-  if (/^R(?:10|[1-9])_/.test(stem)) return "R";
+  if (/^P[1-9]\d*_/.test(stem)) return "P";
+  if (/^R[1-9]\d*_/.test(stem)) return "R";
   if (stem === "전체_사례_목록") return "index";
   return undefined;
 }
