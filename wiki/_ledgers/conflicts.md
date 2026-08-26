@@ -1,0 +1,9 @@
+# Adjudicated conflicts
+
+Task 10 records only material cross-claim tensions. Each disposition keeps the claims atomic instead of forcing a false merge.
+
+```jsonl
+{"record_type":"conflict","id":"CNF-1001","research_cutoff":"2026-08-25T06:42:44Z","claim_ids":["CLM-FRAUD-5004","CLM-COMPENSATION-0002"],"conflict_type":"scope","status":"resolved","resolution":"The full-property criminal fraud amount rule and the compensation-order damage categories answer different legal questions. They remain separate claims; neither amount is substituted for the other.","resolved_by_verification_id":"VRF-6104","caveats":["VRF-5008 independently confirms the criminal rule; VRF-6104 confirms the compensation scope and uncertainty limit."]}
+{"record_type":"conflict","id":"CNF-1002","research_cutoff":"2026-08-25T06:42:44Z","claim_ids":["CLM-TITLE-0011","CLM-TITLE-0012"],"conflict_type":"temporal_validity","status":"resolved","resolution":"Ordinary finality follows the appeal-window sequence, while public-service restoration is a preserved exception. The exception prevents mechanical finality inference but does not replace the ordinary rule.","resolved_by_verification_id":"VRF-7064","caveats":["The two claims share case-family evidence only for the exception and remain distinct finality propositions."]}
+{"record_type":"conflict","id":"CNF-1003","research_cutoff":"2026-08-25T06:42:44Z","claim_ids":["CLM-STATISTICS-9001","CLM-STATISTICS-9005"],"conflict_type":"statistic_definition","status":"resolved","resolution":"같은 공식 페이지의 상세 설명은 100,539를 2024 전체 발생건수라고 부르지만 POST 표는 같은 값을 직거래 열에 둔다. 원자료 정의가 확인될 때까지 어느 범주의 확정 수치로도 출판하지 않는다.","resolved_by_verification_id":"VRF-9006","caveats":["Resolved는 원자료 의미가 밝혀졌다는 뜻이 아니라 출판 판정을 보수적으로 완료했다는 뜻이다.","Fresh GET/POST receipt SHA-256: 19f69acff7db9b656e6d021adee6c421660ef87ee0075a79af7259db2865d707."]}
+```

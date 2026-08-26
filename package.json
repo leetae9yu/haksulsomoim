@@ -19,6 +19,8 @@
     "qa:mcp": "bun run scripts/qa-mcp.ts",
     "qa:installed": "bun run scripts/qa-installed-mcp.ts",
     "qa:law": "bun run scripts/qa-law.ts",
+    "qa:wiki": "bun run scripts/qa-wiki.ts",
+    "compile:wiki": "bun run scripts/wiki-intake.ts",
     "qa:court": "bun run scripts/qa-court-portal.ts",
     "qa:court-mock": "bun run scripts/qa-court-style-mock.ts",
     "qa:ocr": "bun run scripts/qa-ocr-redaction.ts",

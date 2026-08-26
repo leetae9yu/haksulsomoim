@@ -123,6 +123,7 @@ bun run qa:secure-computer
 bun run qa:ocr
 bun run qa:court
 bun run qa:court-mock
+bun run qa:wiki # validates the default wiki/ corpus; pass a directory to override it
 bun run build
 ```
 
