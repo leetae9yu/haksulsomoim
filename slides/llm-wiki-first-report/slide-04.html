@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>근거 연결 구조</title>
+  <link rel="stylesheet" href="./shared.css">
+</head>
+<body>
+  <p class="eyebrow">근거 추적</p>
+  <h2>한 문장이 출처까지 이어지는 구조</h2>
+  <p class="lede">각 단계는 고유 식별자와 변경 확인값을 가집니다. Wiki 문장에서 공식 원문까지 이동할 수 있습니다.</p>
+  <div class="flow" style="margin-top: 58px;">
+    <div class="node">
+      <span class="code">SRC</span>
+      <strong>출처</strong>
+      <span>법령·판례·기관 안내</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="node">
+      <span class="code">OBS</span>
+      <strong>관찰</strong>
+      <span>원문에서 확인한 문장</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="node">
+      <span class="code">CLM</span>
+      <strong>주장</strong>
+      <span>질문에 답하는 최소 단위</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="node">
+      <span class="code">VRF</span>
+      <strong>검증</strong>
+      <span>근거 수준과 예외 확인</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="node" style="border-color:#0071e3;">
+      <span class="code">WIKI</span>
+      <strong>공개 문서</strong>
+      <span>사례·보고서·에이전트</span>
+    </div>
+  </div>
+  <p class="page">04</p>
+</body>
+</html>
